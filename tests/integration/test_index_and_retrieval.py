@@ -28,22 +28,22 @@ def test_index_and_retrieval_flow(tmp_path: Path):
     assert result["indexed_chunks"] >= 1
 
     roots = path_root(db)
-    assert "agents" in roots["items"]
+    assert "memory" in roots["items"]
 
-    children = path_children(db, "agents.tools", limit=10, cursor=None)
-    assert any(item["lookup_path"] == "agents.tools.memory" for item in children["items"])
+    children = path_children(db, "memory.guide.agents.tools", limit=10, cursor=None)
+    assert any(item["lookup_path"] == "memory.guide.agents.tools.memory" for item in children["items"])
 
-    out = path_lookup(db, settings, path="agents.tools.memory", max_tokens=1200, limit=10)
+    out = path_lookup(db, settings, path="memory.guide.agents.tools.memory", max_tokens=1200, limit=10)
     assert out["items"]
     cid = out["items"][0]["chunk_id"]
 
-    search = text_search(db, settings, query="phone number", path_prefix="agents", max_tokens=1200, limit=10)
+    search = text_search(db, settings, query="phone number", path_prefix="memory.guide.agents", max_tokens=1200, limit=10)
     assert search["items"]
 
     fetched = chunk_fetch(db, cid)
     assert fetched["item"]
     assert "555-0100" in fetched["item"]["text"]
-    alt_lookup = path_lookup(db, settings, path="rootalt", max_tokens=1200, limit=10)
+    alt_lookup = path_lookup(db, settings, path="memory.root_alt", max_tokens=1200, limit=10)
     assert alt_lookup["items"]
     assert alt_lookup["items"][0]["path"] == "memory.md"
     db.close()

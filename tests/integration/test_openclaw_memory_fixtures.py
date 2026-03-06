@@ -41,15 +41,13 @@ def test_openclaw_style_memory_fixture_ingest(tmp_path: Path):
     assert result["indexed_chunks"] >= 4
 
     roots = path_root(db)
-    assert "longtermmemory" in roots["items"]
-    assert "rootfallbackmemory" in roots["items"]
-    assert "dailynetworkops" in roots["items"]
-    assert "projectnetworkreference" in roots["items"]
+    # File path prefix makes "memory" the single universal root.
+    assert "memory" in roots["items"]
 
-    children = path_children(db, "longtermmemory", limit=50, cursor=None)
-    assert any(item["lookup_path"] == "longtermmemory.decisions" for item in children["items"])
+    children = path_children(db, "memory.longtermmemory", limit=50, cursor=None)
+    assert any(item["lookup_path"] == "memory.longtermmemory.decisions" for item in children["items"])
 
-    longterm = path_lookup(db, settings, path="longtermmemory", max_tokens=1200, limit=10)
+    longterm = path_lookup(db, settings, path="memory.longtermmemory", max_tokens=1200, limit=10)
     assert longterm["items"]
     first = longterm["items"][0]
     assert first["path"] == "MEMORY.md"
@@ -62,7 +60,7 @@ def test_openclaw_style_memory_fixture_ingest(tmp_path: Path):
         db,
         settings,
         query="router migration VLAN10",
-        path_prefix="dailynetworkops",
+        path_prefix="memory.2026_02_25.dailynetworkops",
         max_tokens=1200,
         limit=10,
     )

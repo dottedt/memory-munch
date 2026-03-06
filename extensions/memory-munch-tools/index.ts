@@ -233,7 +233,14 @@ export default function register(api: OpenClawPluginApi) {
       if (!items.length) return;
       const snippets = items
         .map((item) => String((item as Record<string, unknown>).snippet ?? "").trim())
-        .filter(Boolean)
+        .filter((s) => {
+          if (!s) return false;
+          // Drop chunks that are pure boilerplate (every non-empty line matches a filler pattern)
+          const lines = s.split("\n").filter((l) => l.trim());
+          if (!lines.length) return false;
+          const boilerplate = lines.every((l) => /^Profile note \d+:/i.test(l.trim()));
+          return !boilerplate;
+        })
         .join("\n\n---\n\n");
       if (!snippets) return;
       return { prependContext: `[Memory context]\n${snippets}\n[End memory context]` };

@@ -24,9 +24,24 @@ def normalize_lookup_path(value: str) -> str:
 
 
 def build_lookup_path(file_path: str, heading_chain: list[str]) -> str:
-    parts = [slugify(h) for h in heading_chain if h.strip()]
+    p = Path(file_path)
+    # File path components (all dirs + stem) form the uniqueness prefix.
+    file_parts = [slugify(part) for part in p.with_suffix("").parts]
+    file_parts = [s for s in file_parts if s]
+
+    heading_parts = [slugify(h) for h in heading_chain if h.strip()]
+
+    # Merge, collapsing consecutive identical segments (e.g. when H1 title
+    # slugifies to the same string as the file stem).
+    raw = file_parts + heading_parts
+    parts: list[str] = []
+    for seg in raw:
+        if seg and (not parts or parts[-1] != seg):
+            parts.append(seg)
+
     if not parts:
-        parts = [slugify(Path(file_path).stem)]
+        parts = [slugify(p.stem) or "untitled"]
+
     return normalize_lookup_path(".".join(parts[:6]))
 
 
