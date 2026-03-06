@@ -510,7 +510,7 @@ class Database:
             f"""
             SELECT c.*, i.access_count, i.last_accessed, i.confidence,
                    bm25(memory_fts) AS rank,
-                   snippet(memory_fts, 0, '', '', ' ... ', 36) AS fts_snippet
+                   snippet(memory_fts, 0, '', '', ' ... ', 64) AS fts_snippet
             FROM memory_fts f
             JOIN memory_chunks c ON c.chunk_id = f.rowid
             LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id

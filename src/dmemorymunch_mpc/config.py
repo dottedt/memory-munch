@@ -27,8 +27,8 @@ class Settings(BaseModel):
     include_globs: list[str] = Field(default_factory=lambda: ["MEMORY.md", "memory.md", "memory/**/*.md"])
     exclude_globs: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDES))
     follow_symlinks: bool = False
-    max_tokens_per_query: int = 1200
-    snippet_chars: int = 200
+    max_tokens_per_query: int = 2400
+    snippet_chars: int = 400
 
 
 DEFAULT_CONFIG_FILE = "dmemorymunch-mpc.toml"
