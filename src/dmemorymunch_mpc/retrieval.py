@@ -106,15 +106,11 @@ def _infer_fact_predicates(query: str) -> list[str]:
     return out
 
 
-def _overlap_score(text: str, terms: list[str]) -> float:
-    if not text or not terms:
+def _overlap(content: str, terms: list[str]) -> float:
+    if not content or not terms:
         return 0.0
-    low = text.lower()
-    matched = 0
-    for t in terms:
-        if t and t in low:
-            matched += 1
-    return matched / max(1, len(terms))
+    low = content.lower()
+    return sum(1 for t in terms if t and t in low) / len(terms)
 
 
 def _activation(row) -> float:
@@ -150,31 +146,31 @@ def _fts_or_query(terms: Iterable[str]) -> str:
     return " OR ".join(f'"{_escape_fts_term(t)}"' for t in ts)
 
 
-def _query_variants(query: str) -> list[tuple[str, str, float]]:
+def _query_variants(query: str) -> list[tuple[str, str]]:
     all_terms = re.findall(r"[a-zA-Z0-9_]+", query.lower())
     sig_terms = _significant_terms(query)
-    variants: list[tuple[str, str, float]] = []
-    seen = set()
+    variants: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
 
-    def add(label: str, q: str, bonus: float) -> None:
+    def add(label: str, q: str) -> None:
         key = (label, q)
         if key in seen:
             return
         seen.add(key)
-        variants.append((label, q, bonus))
+        variants.append((label, q))
 
-    add("fts_exact", _fts_and_query(all_terms), 0.35)
+    add("fts_exact", _fts_and_query(all_terms))
     if sig_terms and sig_terms != all_terms:
-        add("fts_keywords", _fts_and_query(sig_terms[:8]), 0.2)
+        add("fts_keywords", _fts_and_query(sig_terms[:8]))
     if len(sig_terms) > 1:
-        add("fts_or", _fts_or_query(sig_terms[:8]), 0.1)
+        add("fts_or", _fts_or_query(sig_terms[:8]))
 
     # Proper-name fallback helps when question terms span sibling chunks.
     name_phrases = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b", query)
     for phrase in name_phrases[:2]:
         name_terms = re.findall(r"[a-zA-Z0-9_]+", phrase.lower())
         if name_terms:
-            add("fts_name", _fts_and_query(name_terms), 0.25)
+            add("fts_name", _fts_and_query(name_terms))
 
     return variants
 
@@ -257,11 +253,10 @@ def text_search(
     trace: list[RetrievalTraceStep] = []
     variants = _query_variants(query)
     hits_by_id: dict[int, dict] = {}
-    order_by_id: dict[int, int] = {}
-    next_order = 0
     max_rows = max(1, min(limit * 6, 400))
-    overlap_terms = _significant_terms(query)[:12]
+    sig_terms = _significant_terms(query)[:8]
 
+    # Stage 1 — fact index: direct predicate+subject matches score highest.
     fact_predicates = _infer_fact_predicates(query)
     subject_tokens = _extract_subject_tokens(query)
     if fact_predicates or subject_tokens:
@@ -273,67 +268,54 @@ def text_search(
             )
         )
         for r in fact_rows:
-            boost = min(1.0, float(r["fact_weight"]) * 0.3) if r["fact_weight"] is not None else 0.0
-            score = _activation(r) + 0.35 + boost
-            hit = _row_to_hit(r, score, settings.snippet_chars)
+            hit = _row_to_hit(r, 3.0, settings.snippet_chars)
             cid = hit["chunk_id"]
-            prev = hits_by_id.get(cid)
-            if prev is None or hit["score"] > prev["score"]:
+            if cid not in hits_by_id or hit["score"] > hits_by_id[cid]["score"]:
                 hits_by_id[cid] = hit
-            if cid not in order_by_id:
-                order_by_id[cid] = next_order
-                next_order += 1
 
-    for label, fts_query, bonus in variants:
+    # Stage 2 — FTS: BM25 (normalized to [0,2)) + content overlap (up to 1.25).
+    # Overlap widens the gap between the best match and background noise,
+    # which is what makes parent_expand sibling inheritance effective.
+    # TypeScript rerankItemsForQuery handles final display ordering.
+    for label, fts_query in variants:
         rows = db.search_text(fts_query, path_prefix, max_rows)
         trace.append(RetrievalTraceStep(stage=label, detail=f"query={fts_query}; hits={len(rows)}"))
         for r in rows:
-            bm25 = max(0.0, -float(r["rank"]))  # BM25 is negative; flip so larger = better
-            keyword = bm25 / (1.0 + bm25)
-            overlap = _overlap_score(str(r["content"] or ""), overlap_terms)
-            score = (2.0 * keyword) + (1.25 * overlap) + (0.35 * _activation(r)) + bonus
+            bm25 = max(0.0, -float(r["rank"]))
+            score = 2.0 * bm25 / (1.0 + bm25) + 1.25 * _overlap(str(r["content"] or ""), sig_terms)
             hit = _row_to_hit(r, score, settings.snippet_chars)
             cid = hit["chunk_id"]
-            prev = hits_by_id.get(cid)
-            if prev is None or hit["score"] > prev["score"]:
+            if cid not in hits_by_id or hit["score"] > hits_by_id[cid]["score"]:
                 hits_by_id[cid] = hit
-            if cid not in order_by_id:
-                order_by_id[cid] = next_order
-                next_order += 1
 
-        # Early stop once we have enough primary hits.
         if len(hits_by_id) >= max(8, limit * 2):
             break
 
     hits = list(hits_by_id.values())
 
-    # Fallback on explicit term index when FTS is sparse.
-    sig_terms = _significant_terms(query)[:6]
+    # Stage 3 — term index fallback when FTS is sparse.
     if len(hits_by_id) < max(2, limit // 2) and sig_terms:
         added = 0
         for term in sig_terms:
             rows = db.chunks_for_term(term, max(8, limit * 2))
             trace.append(RetrievalTraceStep(stage="term_index", detail=f"term={term}; hits={len(rows)}"))
             for r in rows:
-                boost = min(1.0, float(r["term_weight"]) * 0.2) if r["term_weight"] is not None else 0.0
-                overlap = _overlap_score(str(r["content"] or ""), overlap_terms)
-                score = (1.1 * overlap) + (0.3 * _activation(r)) + 0.15 + boost
+                boost = min(0.5, float(r["term_weight"]) * 0.3) if r["term_weight"] is not None else 0.0
+                score = 0.3 + boost
                 hit = _row_to_hit(r, score, settings.snippet_chars)
                 cid = hit["chunk_id"]
-                prev = hits_by_id.get(cid)
-                if prev is None or hit["score"] > prev["score"]:
-                    if prev is None:
-                        added += 1
+                if cid not in hits_by_id:
                     hits_by_id[cid] = hit
-                if cid not in order_by_id:
-                    order_by_id[cid] = next_order
-                    next_order += 1
+                    added += 1
+                elif hit["score"] > hits_by_id[cid]["score"]:
+                    hits_by_id[cid] = hit
         if added:
             trace.append(RetrievalTraceStep(stage="term_index_expand", detail=f"added={added}"))
         hits = list(hits_by_id.values())
 
-    # Expand sibling chunks under same parent_path to support split semantic facts
-    # (e.g., person identity in one chunk and follow-up notes in another).
+    # Stage 4 — sibling expand: pull in chunks under the same parent as the
+    # top hits (e.g., Person card when notes chunk was the primary match).
+    # Siblings inherit anchor_score * 0.75 so they survive the budget cut.
     if hits:
         parent_info: list[tuple[str, float]] = []
         seen_parents: set[str] = set()
@@ -346,25 +328,22 @@ def text_search(
         expanded = 0
         for parent, anchor_score in parent_info:
             for row in db.chunks_for_parent(parent, 8):
-                # Sibling chunks inherit a score competitive with their anchor so
-                # they survive the limit/budget cut alongside the primary hit.
-                score = max(_activation(row) + 0.05, anchor_score * 0.75)
-                hit = _row_to_hit(row, score, settings.snippet_chars)
+                sibling_score = max(0.3, anchor_score * 0.75)
+                hit = _row_to_hit(row, sibling_score, settings.snippet_chars)
                 cid = hit["chunk_id"]
-                if cid in hits_by_id:
-                    continue
-                hits_by_id[cid] = hit
-                if cid not in order_by_id:
-                    order_by_id[cid] = next_order
-                    next_order += 1
-                expanded += 1
+                if cid not in hits_by_id:
+                    hits_by_id[cid] = hit
+                    expanded += 1
+                elif sibling_score > hits_by_id[cid]["score"]:
+                    # Chunk already found by FTS with a lower score — upgrade it
+                    # so it survives the budget cut alongside its anchor.
+                    upgraded = dict(hits_by_id[cid])
+                    upgraded["score"] = round(sibling_score, 4)
+                    hits_by_id[cid] = upgraded
         if expanded:
             trace.append(RetrievalTraceStep(stage="parent_expand", detail=f"added={expanded}"))
         hits = list(hits_by_id.values())
 
-    # Sort by score so the most relevant items survive the limit/budget cut
-    # regardless of discovery order (parent_expand items are added last but
-    # can have competitive scores). TypeScript reranks for final display.
     hits.sort(key=lambda h: -h["score"])
     hits = _apply_token_budget(hits[: max(1, min(limit, 200))], max_tokens)
     db.record_access([h["chunk_id"] for h in hits])
