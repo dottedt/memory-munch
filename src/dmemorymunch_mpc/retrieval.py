@@ -335,18 +335,20 @@ def text_search(
     # Expand sibling chunks under same parent_path to support split semantic facts
     # (e.g., person identity in one chunk and follow-up notes in another).
     if hits:
-        parent_paths = []
-        seen_parents = set()
+        parent_info: list[tuple[str, float]] = []
+        seen_parents: set[str] = set()
         for h in sorted(hits, key=lambda x: -x["score"])[:5]:
             lp = h.get("lookup_path") or ""
             parent = ".".join(str(lp).split(".")[:-1]) if lp else ""
             if parent and parent not in seen_parents:
                 seen_parents.add(parent)
-                parent_paths.append(parent)
+                parent_info.append((parent, h["score"]))
         expanded = 0
-        for parent in parent_paths:
+        for parent, anchor_score in parent_info:
             for row in db.chunks_for_parent(parent, 8):
-                score = _activation(row) + 0.05
+                # Sibling chunks inherit a score competitive with their anchor so
+                # they survive the limit/budget cut alongside the primary hit.
+                score = max(_activation(row) + 0.05, anchor_score * 0.75)
                 hit = _row_to_hit(row, score, settings.snippet_chars)
                 cid = hit["chunk_id"]
                 if cid in hits_by_id:
@@ -360,7 +362,10 @@ def text_search(
             trace.append(RetrievalTraceStep(stage="parent_expand", detail=f"added={expanded}"))
         hits = list(hits_by_id.values())
 
-    hits.sort(key=lambda h: order_by_id.get(h["chunk_id"], 10**9))
+    # Sort by score so the most relevant items survive the limit/budget cut
+    # regardless of discovery order (parent_expand items are added last but
+    # can have competitive scores). TypeScript reranks for final display.
+    hits.sort(key=lambda h: -h["score"])
     hits = _apply_token_budget(hits[: max(1, min(limit, 200))], max_tokens)
     db.record_access([h["chunk_id"] for h in hits])
     return {"items": hits, "retrieval_trace": [asdict(t) for t in trace]}
