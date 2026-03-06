@@ -22,6 +22,7 @@ dmemorymunch-mpc --config /absolute/path/to/dmemorymunch-mpc.toml
 dmemorymunch-mpc-admin init-db --config dmemorymunch-mpc.toml
 dmemorymunch-mpc-admin index --scope all --config dmemorymunch-mpc.toml
 dmemorymunch-mpc-admin watch --config dmemorymunch-mpc.toml
+dmemorymunch-mpc-admin savings
 ```
 
 ## MCP tools
@@ -50,3 +51,30 @@ Always prefer path navigation/lookup before text search.
 - Snippets are short (default 200 chars)
 - Full text only via `memory_munch_chunk_fetch`
 - No full-document tool responses
+
+## OpenClaw Plugin Packaging
+
+This repo now includes a packaged OpenClaw extension at:
+
+- `extensions/memory-munch-tools/index.ts`
+- `extensions/memory-munch-tools/openclaw.plugin.json`
+
+Install it into a local OpenClaw state directory:
+
+```bash
+./scripts/install_openclaw_memory_munch_plugin.sh
+```
+
+What this does:
+
+- copies `memory-munch-tools` into `~/.openclaw/extensions/`
+- writes plugin config paths (`pythonBin`, `bridgeScript`, `configPath`)
+- restarts OpenClaw daemon (unless `--no-restart`)
+
+Note: test memory content (like `mimmic/`) is intentionally not coupled to plugin install.
+
+Verify installation/runtime:
+
+```bash
+./scripts/verify_openclaw_memory_munch.sh "Which lead asked for temporary searchable inbox before CRM sync? Give just the name."
+```

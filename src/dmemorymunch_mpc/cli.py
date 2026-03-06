@@ -10,6 +10,7 @@ from .config import load_settings
 from .db import Database
 from .indexer import run_index
 from .server import run_server
+from .token_tracker import cost_avoided, get_total_saved
 
 
 app = typer.Typer(add_completion=False, help="dmemorymunch-mpc CLI")
@@ -109,6 +110,16 @@ def doctor_cmd(config: str = typer.Option(None), db: str = typer.Option(None)) -
         typer.echo(json.dumps(result, indent=2))
     finally:
         database.close()
+
+
+@app.command("savings")
+def savings_cmd() -> None:
+    total_tokens_saved = get_total_saved()
+    payload = {
+        "total_tokens_saved": total_tokens_saved,
+        **cost_avoided(0, total_tokens_saved),
+    }
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("serve")

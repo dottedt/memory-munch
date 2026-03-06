@@ -1,0 +1,7 @@
+db_path = ".memorymunch/memory.db"
+roots = ["."]
+include_globs = ["MEMORY.md", "memory.md", "memory/**/*.md"]
+exclude_globs = []
+follow_symlinks = false
+max_tokens_per_query = 1200
+snippet_chars = 200

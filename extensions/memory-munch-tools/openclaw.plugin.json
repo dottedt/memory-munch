@@ -1,0 +1,16 @@
+{
+  "id": "memory-munch-tools",
+  "kind": "memory",
+  "name": "Memory-Munch Tools",
+  "description": "Expose Memory-Munch deterministic retrieval tools to OpenClaw agents.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pythonBin": { "type": "string" },
+      "bridgeScript": { "type": "string" },
+      "configPath": { "type": "string" },
+      "timeoutMs": { "type": "number", "minimum": 1000 }
+    }
+  }
+}
