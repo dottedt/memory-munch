@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dmemorymunch_mpc.config import load_settings
 from dmemorymunch_mpc.db import Database
+from dmemorymunch_mpc.token_tracker import cost_avoided, get_total_saved
 from dmemorymunch_mpc.tools import (
     memory_munch_chunk_fetch_tool,
     memory_munch_path_children_tool,
@@ -60,7 +61,15 @@ def main() -> int:
     p_fetch = sub.add_parser("chunk_fetch")
     p_fetch.add_argument("--chunk_id", type=int, required=True)
 
+    sub.add_parser("savings")
+
     args = parser.parse_args()
+
+    if args.op == "savings":
+        total = get_total_saved()
+        _print_json({"ok": True, "data": {"total_tokens_saved": total, **cost_avoided(0, total)}})
+        return 0
+
     config_path = _cfg_path(args.config_path)
     settings = load_settings(config_path)
     db = Database(_resolve_db_path(config_path, settings.db_path))

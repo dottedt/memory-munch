@@ -201,7 +201,60 @@ async function runMemoryGetFromFile(api: OpenClawPluginApi, params: Record<strin
   };
 }
 
+function formatSavings(data: Record<string, unknown>): string {
+  const total = typeof data.total_tokens_saved === "number" ? data.total_tokens_saved : 0;
+  const totalCost = data.total_cost_avoided as Record<string, number> | undefined;
+  const parts = [`Memory-Munch: ${total.toLocaleString()} tokens saved`];
+  if (totalCost) {
+    const entries = Object.entries(totalCost)
+      .map(([k, v]) => `${k}: $${v.toFixed(4)}`)
+      .join(", ");
+    if (entries) parts.push(`(${entries} avoided)`);
+  }
+  return parts.join(" ");
+}
+
 export default function register(api: OpenClawPluginApi) {
+  // Auto-inject memory context before every user message so the model always
+  // has relevant snippets regardless of whether it would call memory_search.
+  api.on("before_prompt_build", async (event, ctx) => {
+    // Skip heartbeat, memory-flush, and cron runs — only inject for real user messages.
+    if (ctx.trigger && ctx.trigger !== "user") return;
+    const query = event.prompt?.trim();
+    if (!query || query.length < 4) return;
+    try {
+      const payload = (await runBridge(api, [
+        "text_search",
+        "--query", query,
+        "--max_tokens", "1200",
+        "--limit", "6",
+      ])) as { data?: { items?: unknown[] } };
+      const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
+      if (!items.length) return;
+      const snippets = items
+        .map((item) => String((item as Record<string, unknown>).snippet ?? "").trim())
+        .filter(Boolean)
+        .join("\n\n---\n\n");
+      if (!snippets) return;
+      return { prependContext: `[Memory context]\n${snippets}\n[End memory context]` };
+    } catch {
+      return;
+    }
+  });
+
+  api.registerCommand({
+    name: "savings",
+    description: "Show Memory-Munch token savings and estimated cost avoided.",
+    async handler() {
+      try {
+        const result = (await runBridge(api, ["savings"])) as { data?: Record<string, unknown> };
+        const data = result?.data ?? {};
+        return { text: formatSavings(data) };
+      } catch (e) {
+        return { text: `Memory-Munch savings unavailable: ${String(e)}` };
+      }
+    },
+  });
   api.registerTool({
     name: "memory_munch_path_root",
     description: "List top-level Memory-Munch paths for deterministic navigation.",
