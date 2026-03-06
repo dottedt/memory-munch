@@ -271,10 +271,6 @@ def _chunk_blocks(
     return out
 
 
-def _safe_term(raw: str) -> str | None:
-    term = re.sub(r"[^a-z0-9]", "", raw.lower())
-    return term if len(term) >= 2 else None
-
 
 def run_index(db: Database, settings: Settings, scope: str = "changed", cwd: Path | None = None) -> dict:
     cwd = cwd or Path.cwd()
@@ -287,15 +283,15 @@ def run_index(db: Database, settings: Settings, scope: str = "changed", cwd: Pat
 
     for f in scanned:
         stat = f.abs_path.stat()
-        h = file_hash(f.abs_path)
         previous = manifest.get(f.rel_path)
-        is_changed = (
-            scope == "all"
-            or previous is None
-            or previous["file_hash"] != h
-            or previous["mtime_ns"] != stat.st_mtime_ns
-            or previous["size_bytes"] != stat.st_size
-        )
+        # Skip the expensive SHA256 read when mtime + size match — fast path for
+        # unchanged files in watch/changed mode.
+        mtime_match = previous is not None and previous["mtime_ns"] == stat.st_mtime_ns and previous["size_bytes"] == stat.st_size
+        if scope == "all" or not mtime_match:
+            h = file_hash(f.abs_path)
+        else:
+            h = previous["file_hash"]
+        is_changed = scope == "all" or previous is None or previous["file_hash"] != h or not mtime_match
         if is_changed:
             changed_files.append(f)
         db.upsert_manifest(f.rel_path, h, stat.st_mtime_ns, stat.st_size)
@@ -304,7 +300,10 @@ def run_index(db: Database, settings: Settings, scope: str = "changed", cwd: Pat
     chunks_deleted = 0
 
     for discovered in changed_files:
-        text = discovered.abs_path.read_text(encoding="utf-8")
+        try:
+            text = discovered.abs_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
         _frontmatter, blocks = parse_markdown_blocks(text)
         chunks = _chunk_blocks(discovered.rel_path, blocks)
         upserted, deleted_for_file = db.replace_chunks_for_file(discovered.rel_path, chunks)
@@ -313,8 +312,10 @@ def run_index(db: Database, settings: Settings, scope: str = "changed", cwd: Pat
 
     chunks_deleted += db.delete_chunks_for_missing_files(scanned_set)
     db.delete_manifest_not_in(scanned_set)
-    db.rebuild_lookup_paths()
-    db.rebuild_terms()
+    if chunks_upserted or chunks_deleted:
+        db.rebuild_lookup_paths()
+        db.rebuild_terms()
+        db.rebuild_facts()
 
     ended = datetime.now(timezone.utc)
     stats = IndexStats(
