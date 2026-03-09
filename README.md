@@ -81,6 +81,9 @@ Default plugin behavior after install (real runtime):
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
 - `exposeRawTools=false`
+- Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
+
+Edit `roots` only if your memory directories live outside the default OpenClaw workspace.
 
 ## Indexing
 
@@ -97,10 +100,6 @@ large memory folders or resetting state):
 dmemorymunch-mpc-admin init-db
 dmemorymunch-mpc-admin index --scope all
 ```
-
-Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
-
-Edit `roots` only if your memory directories live outside the default OpenClaw workspace.
 
 Optional: disable automatic watcher
 
