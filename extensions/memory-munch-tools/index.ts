@@ -5,6 +5,30 @@ import { readMemoryFileSnippet } from "./sdk/files";
 import { MemoryMunchModelApi, toLegacyMemorySearch } from "./sdk/model";
 import { MemoryMunchRawApi } from "./sdk/raw";
 
+// tryNativeFallback uses api.runtime.tools.createMemorySearchTool, which is not in the
+// documented plugin API. It is intentional: when FTS finds nothing, we attempt to
+// delegate to OpenClaw's displaced native vector search rather than returning empty.
+// This may break on OpenClaw upgrades. Track: https://github.com/dottedt/memory-munch/issues/1
+async function tryNativeFallback(
+  api: OpenClawPluginApi,
+  ctx: { config: unknown; sessionKey: string | undefined },
+  id: string,
+  query: string,
+  maxResults: number,
+): Promise<unknown | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeTool = (api.runtime.tools as any).createMemorySearchTool?.({
+    config: ctx.config,
+    agentSessionKey: ctx.sessionKey,
+  });
+  if (!nativeTool) return null;
+  try {
+    return await nativeTool.execute(id, { query, maxResults });
+  } catch {
+    return null;
+  }
+}
+
 function asToolResponse(payload: unknown) {
   return {
     content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
@@ -23,21 +47,6 @@ function formatSavings(data: Record<string, unknown>): string {
     if (entries) parts.push(`(${entries} avoided)`);
   }
   return parts.join(" ");
-}
-
-async function tryNativeFallback(
-  api: OpenClawPluginApi,
-  ctx: { config: unknown; sessionKey: string | undefined },
-  id: string,
-  query: string,
-  maxResults: number,
-): Promise<unknown | null> {
-  const nativeTool = api.runtime.tools.createMemorySearchTool({
-    config: ctx.config,
-    agentSessionKey: ctx.sessionKey,
-  });
-  if (!nativeTool) return null;
-  return nativeTool.execute(id, { query, maxResults });
 }
 
 export default function register(api: OpenClawPluginApi) {
@@ -79,7 +88,7 @@ export default function register(api: OpenClawPluginApi) {
   api.registerTool(
     (ctx) => ({
       name: "memory_search",
-      description: "Search memory using deterministic retrieval with native fallback.",
+      description: "Search memory using deterministic keyword and path retrieval, with native vector fallback.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -102,7 +111,6 @@ export default function register(api: OpenClawPluginApi) {
         return asToolResponse(toLegacyMemorySearch(result.items));
       },
     }),
-    { names: ["memory_search"] },
   );
 
   api.registerTool({

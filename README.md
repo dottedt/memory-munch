@@ -21,7 +21,7 @@ If you do coding work with AI and want to save a butt ton of tokens, definitely 
 
 No embedding model. No external services. No cloud calls. Just local keyword/path retrieval with hard token caps so it never blows up your context window.
 
-When Memory-Munch has no confident hit, it falls back to OpenClaw's native vector memory search. It will still return a useful memory result path when possible.
+When Memory-Munch has no confident hit, it falls back to OpenClaw's native vector memory search automatically.
 
 If you use OpenClaw's memory and find it dumping too much, or too little, into context, this is for you.
 

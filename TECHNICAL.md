@@ -220,7 +220,7 @@ Three tools are always registered and are the primary interface for agents:
 
 | Tool | Behavior |
 |---|---|
-| `memory_search` | Text search with native fallback. Returns results in OpenClaw's native `memory_search` schema (`results`, `provider`, `model`). Falls back to OpenClaw's native vector search if FTS finds nothing. |
+| `memory_search` | Keyword and path retrieval with native vector fallback. Returns results in OpenClaw's native `memory_search` schema (`results`, `provider`, `model`). Falls back to OpenClaw's native vector search when FTS finds nothing. |
 | `memory_get` | Reads a bounded line range from the source file directly (not the chunk index). Accepts `path`, `from`, `lines`. Matches OpenClaw's built-in `memory_get` schema. |
 | `memory_lookup` | Path-first retrieval: routes through `path_lookup` when the query looks like a dot-path, otherwise falls back to `text_search`. Registered as optional. |
 
