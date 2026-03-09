@@ -8,6 +8,7 @@ export type PluginCfg = {
   exposeRawTools?: boolean;
   autoIndexWatch?: boolean;
   autoIndexWatchIntervalSec?: number;
+  autoFlushOnCompaction?: boolean;
 };
 
 export type ResolvedPluginCfg = {
@@ -17,6 +18,7 @@ export type ResolvedPluginCfg = {
   exposeRawTools: boolean;
   autoIndexWatch: boolean;
   autoIndexWatchIntervalSec: number;
+  autoFlushOnCompaction: boolean;
 };
 
 export function resolvePluginCfg(api: OpenClawPluginApi): ResolvedPluginCfg {
@@ -44,6 +46,8 @@ export function resolvePluginCfg(api: OpenClawPluginApi): ResolvedPluginCfg {
       typeof cfg.autoIndexWatchIntervalSec === "number" && cfg.autoIndexWatchIntervalSec >= 0.5
         ? cfg.autoIndexWatchIntervalSec
         : 1.5,
+    autoFlushOnCompaction:
+      typeof cfg.autoFlushOnCompaction === "boolean" ? cfg.autoFlushOnCompaction : true,
   };
 }
 

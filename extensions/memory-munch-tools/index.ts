@@ -70,6 +70,23 @@ export default function register(api: OpenClawPluginApi) {
     });
   }
 
+  if (cfg.autoFlushOnCompaction) {
+    api.on("before_compaction", async (event) => {
+      const text = String((event as { context?: string })?.context ?? "");
+      if (text.length < 100) return;
+      try {
+        await raw.memorySave({
+          content: text,
+          path: `session_log.${Date.now()}`,
+          heading: "Session snapshot",
+          replace: false,
+        });
+      } catch {
+        return;
+      }
+    });
+  }
+
   api.registerCommand({
     name: "savings",
     description: "Show Memory-Munch token savings and estimated cost avoided.",
@@ -170,6 +187,58 @@ export default function register(api: OpenClawPluginApi) {
     },
     { optional: true },
   );
+
+  api.registerTool({
+    name: "memory_save",
+    description: "Persist memory directly to the local memory index.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["content"],
+      properties: {
+        content: { type: "string" },
+        path: { type: "string" },
+        heading: { type: "string" },
+        replace: { type: "boolean" },
+      },
+    },
+    async execute(_id: string, params: Record<string, unknown>) {
+      const content = typeof params.content === "string" ? params.content : "";
+      if (!content.trim()) throw new Error("content is required");
+      return asToolResponse(
+        await raw.memorySave({
+          content,
+          path: typeof params.path === "string" ? params.path : undefined,
+          heading: typeof params.heading === "string" ? params.heading : undefined,
+          replace: typeof params.replace === "boolean" ? params.replace : false,
+        }),
+      );
+    },
+  });
+
+  api.registerTool({
+    name: "memory_relate",
+    description: "Create a relationship edge between memory lookup paths.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["subject", "predicate", "object"],
+      properties: {
+        subject: { type: "string" },
+        predicate: { type: "string" },
+        object: { type: "string" },
+      },
+    },
+    async execute(_id: string, params: Record<string, unknown>) {
+      const subject = typeof params.subject === "string" ? params.subject.trim() : "";
+      const predicate = typeof params.predicate === "string" ? params.predicate.trim() : "";
+      const object = typeof params.object === "string" ? params.object.trim() : "";
+      if (!subject || !predicate || !object) {
+        throw new Error("subject, predicate, and object are required");
+      }
+      return asToolResponse(await raw.memoryRelate({ subject, predicate, object }));
+    },
+  });
 
   if (cfg.exposeRawTools) {
     // Low-level compatibility plumbing, hidden by default.

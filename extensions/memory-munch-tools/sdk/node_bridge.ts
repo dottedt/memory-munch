@@ -50,6 +50,20 @@ export class NodeBridge {
         const id = Number(readFlag(args, "--chunk_id") || "-1");
         return this.backend.chunkFetch(Number.isFinite(id) ? id : -1);
       }
+      case "memory_save": {
+        const content = readFlag(args, "--content") || "";
+        const path = readFlag(args, "--path");
+        const heading = readFlag(args, "--heading");
+        const replaceRaw = (readFlag(args, "--replace") || "").toLowerCase();
+        const replace = replaceRaw === "true" || replaceRaw === "1" || replaceRaw === "yes";
+        return this.backend.saveDirectChunk({ content, path, heading, replace });
+      }
+      case "memory_relate": {
+        const subject = readFlag(args, "--subject") || "";
+        const predicate = readFlag(args, "--predicate") || "";
+        const object = readFlag(args, "--object") || "";
+        return this.backend.relate({ subject, predicate, object });
+      }
       case "savings":
         return this.backend.savings();
       case "index": {

@@ -12,7 +12,8 @@
       "autoInjectPromptContext": { "type": "boolean" },
       "exposeRawTools": { "type": "boolean" },
       "autoIndexWatch": { "type": "boolean" },
-      "autoIndexWatchIntervalSec": { "type": "number", "minimum": 0.5 }
+      "autoIndexWatchIntervalSec": { "type": "number", "minimum": 0.5 },
+      "autoFlushOnCompaction": { "type": "boolean" }
     }
   }
 }

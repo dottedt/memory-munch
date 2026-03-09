@@ -2,16 +2,30 @@ import path from "node:path";
 
 const VALID_PATH_RE = /^[a-z0-9._-]+$/;
 
-function slugify(value: string): string {
+export function slugify(value: string): string {
   const s = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return s || "untitled";
 }
 
-function normalizeLookupPath(value: string): string {
+export function normalizeLookupPath(value: string): string {
   const p = value.trim().toLowerCase().replace(/\.+/g, ".").replace(/^\.+|\.+$/g, "");
   if (!p) throw new Error("lookup path cannot be empty");
   if (!VALID_PATH_RE.test(p)) throw new Error(`invalid lookup path: ${value}`);
   return p;
+}
+
+export function coerceLookupPath(value: string): string {
+  const raw = (value || "").trim();
+  if (!raw) return "untitled";
+  try {
+    return normalizeLookupPath(raw);
+  } catch {
+    const parts = raw
+      .split(".")
+      .map((p) => slugify(p))
+      .filter(Boolean);
+    return normalizeLookupPath(parts.length ? parts.join(".") : "untitled");
+  }
 }
 
 export function buildLookupPath(filePath: string, headingChain: string[]): string {

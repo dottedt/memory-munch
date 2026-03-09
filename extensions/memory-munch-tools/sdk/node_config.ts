@@ -9,6 +9,7 @@ export type NodeBackendSettings = {
   followSymlinks: boolean;
   maxTokensPerQuery: number;
   snippetChars: number;
+  autoFlushOnCompaction: boolean;
 };
 
 const DEFAULT_EXCLUDES = [
@@ -35,6 +36,7 @@ function defaultSettings(): NodeBackendSettings {
     followSymlinks: false,
     maxTokensPerQuery: 1200,
     snippetChars: 200,
+    autoFlushOnCompaction: true,
   };
 }
 
@@ -122,6 +124,10 @@ export function loadNodeBackendSettings(configPath: string): NodeBackendSettings
         typeof raw.max_tokens_per_query === "number" ? Math.max(1, Math.trunc(raw.max_tokens_per_query)) : defaults.maxTokensPerQuery,
       snippetChars:
         typeof raw.snippet_chars === "number" ? Math.max(40, Math.trunc(raw.snippet_chars)) : defaults.snippetChars,
+      autoFlushOnCompaction:
+        typeof raw.auto_flush_on_compaction === "boolean"
+          ? raw.auto_flush_on_compaction
+          : defaults.autoFlushOnCompaction,
     };
   } catch {
     return defaults;

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { buildLookupPath, parentPath } from "./node_paths";
+import { buildLookupPath, coerceLookupPath, parentPath, slugify } from "./node_paths";
 import { loadNodeBackendSettings, resolveDbPath, type NodeBackendSettings } from "./node_config";
 import { parseMarkdownBlocks } from "./node_parser";
 
@@ -231,6 +231,7 @@ type ChunkRecord = {
   lookupPath: string;
   parentPath: string | null;
   chunkOrder: number;
+  source: "file" | "agent";
   content: string;
   tokenCount: number;
   sourceFile: string;
@@ -461,6 +462,7 @@ function chunkBlocks(sourceFile: string, blocks: ReturnType<typeof parseMarkdown
       lookupPath: pendingLookup,
       parentPath: parentPath(pendingLookup),
       chunkOrder: order,
+      source: "file",
       content,
       tokenCount: estimateTokens(content),
       sourceFile,
@@ -542,6 +544,7 @@ function chunkBlocks(sourceFile: string, blocks: ReturnType<typeof parseMarkdown
           lookupPath: lookup,
           parentPath: parentPath(lookup),
           chunkOrder: order,
+          source: "file",
           content: seg.text,
           tokenCount: blockTokens,
           sourceFile,
@@ -597,6 +600,12 @@ export class NodeMemoryMunchBackend {
     return this.dbPath;
   }
 
+  private ensureColumn(table: "memory_chunks", column: string, definition: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (rows.some((r) => r.name === column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+
   private ensureSchema(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS _schema_migrations (
@@ -628,6 +637,7 @@ export class NodeMemoryMunchBackend {
         lookup_path TEXT NOT NULL,
         parent_path TEXT,
         chunk_order INTEGER NOT NULL,
+        source TEXT NOT NULL DEFAULT 'file',
         content TEXT NOT NULL,
         token_count INTEGER NOT NULL,
         source_file TEXT NOT NULL,
@@ -640,6 +650,7 @@ export class NodeMemoryMunchBackend {
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_parent_path ON memory_chunks(parent_path);
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_lookup_order ON memory_chunks(lookup_path, chunk_order);
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_source_file ON memory_chunks(source_file);
+      CREATE INDEX IF NOT EXISTS idx_memory_chunks_source ON memory_chunks(source);
 
       CREATE TABLE IF NOT EXISTS memory_lookup_paths (
         lookup_path TEXT PRIMARY KEY,
@@ -682,6 +693,31 @@ export class NodeMemoryMunchBackend {
       CREATE INDEX IF NOT EXISTS idx_memory_facts_predicate ON memory_facts(predicate);
       CREATE INDEX IF NOT EXISTS idx_memory_facts_subject ON memory_facts(subject);
 
+      CREATE TABLE IF NOT EXISTS memory_direct (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chunk_id INTEGER NOT NULL,
+        lookup_path TEXT NOT NULL,
+        heading TEXT,
+        source_file TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        source TEXT NOT NULL DEFAULT 'agent',
+        FOREIGN KEY(chunk_id) REFERENCES memory_chunks(chunk_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_direct_hash_time ON memory_direct(content_hash, created_at);
+      CREATE INDEX IF NOT EXISTS idx_memory_direct_lookup_path ON memory_direct(lookup_path);
+
+      CREATE TABLE IF NOT EXISTS memory_relations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL,
+        predicate TEXT NOT NULL,
+        object TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        source TEXT NOT NULL DEFAULT 'agent'
+      );
+      CREATE INDEX IF NOT EXISTS idx_rel_subject ON memory_relations(subject);
+      CREATE INDEX IF NOT EXISTS idx_rel_object ON memory_relations(object);
+
       DROP TRIGGER IF EXISTS memory_chunks_ai;
       DROP TRIGGER IF EXISTS memory_chunks_ad;
       DROP TRIGGER IF EXISTS memory_chunks_au;
@@ -711,6 +747,8 @@ export class NodeMemoryMunchBackend {
         VALUES (new.chunk_id, new.content, new.lookup_path);
       END;
     `);
+
+    this.ensureColumn("memory_chunks", "source", "TEXT NOT NULL DEFAULT 'file'");
   }
 
   async discoverFiles(cwd = process.cwd()): Promise<DiscoveredFile[]> {
@@ -796,15 +834,17 @@ export class NodeMemoryMunchBackend {
   }
 
   private replaceChunksForFile(sourceFile: string, chunks: ChunkRecord[]): { upserted: number; deleted: number } {
-    const deleted = Number(this.db.prepare("DELETE FROM memory_chunks WHERE source_file = ?").run(sourceFile).changes || 0);
+    const deleted = Number(
+      this.db.prepare("DELETE FROM memory_chunks WHERE source_file = ? AND source = 'file'").run(sourceFile).changes || 0,
+    );
     if (chunks.length === 0) return { upserted: 0, deleted };
 
     const now = utcIso();
     const stmt = this.db.prepare(
       `INSERT INTO memory_chunks(
-        lookup_path, parent_path, chunk_order, content, token_count,
+        lookup_path, parent_path, chunk_order, source, content, token_count,
         source_file, start_line, end_line, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const tx = this.db.transaction((records: ChunkRecord[]) => {
@@ -813,6 +853,7 @@ export class NodeMemoryMunchBackend {
           c.lookupPath,
           c.parentPath,
           c.chunkOrder,
+          c.source,
           c.content,
           c.tokenCount,
           c.sourceFile,
@@ -825,7 +866,7 @@ export class NodeMemoryMunchBackend {
       this.db
         .prepare(
           `INSERT OR IGNORE INTO memory_index(chunk_id, access_count, last_accessed)
-           SELECT chunk_id, 0, NULL FROM memory_chunks WHERE source_file = ?`,
+           SELECT chunk_id, 0, NULL FROM memory_chunks WHERE source_file = ? AND source = 'file'`,
         )
         .run(sourceFile);
     });
@@ -835,11 +876,15 @@ export class NodeMemoryMunchBackend {
 
   private deleteMissingChunks(scanned: Set<string>): number {
     if (scanned.size === 0) {
-      return Number(this.db.prepare("DELETE FROM memory_chunks").run().changes || 0);
+      return Number(this.db.prepare("DELETE FROM memory_chunks WHERE source = 'file'").run().changes || 0);
     }
     const list = [...scanned];
     const placeholders = list.map(() => "?").join(",");
-    return Number(this.db.prepare(`DELETE FROM memory_chunks WHERE source_file NOT IN (${placeholders})`).run(...list).changes || 0);
+    return Number(
+      this.db
+        .prepare(`DELETE FROM memory_chunks WHERE source = 'file' AND source_file NOT IN (${placeholders})`)
+        .run(...list).changes || 0,
+    );
   }
 
   private rebuildLookupPaths(): void {
@@ -1072,6 +1117,162 @@ export class NodeMemoryMunchBackend {
       duration_ms: ended - started,
       scope,
     };
+  }
+
+  saveDirectChunk(params: {
+    content: string;
+    path?: string;
+    heading?: string;
+    replace?: boolean;
+    source?: string;
+  }): EnvelopeOk | EnvelopeErr {
+    const started = Date.now();
+    try {
+      const content = (params.content || "").trim();
+      if (!content) return err("INVALID_CONTENT", "content is required", {}, started);
+
+      const heading = (params.heading || "Session snapshot").trim() || "Session snapshot";
+      const lookupPath = params.path?.trim()
+        ? coerceLookupPath(params.path)
+        : buildLookupPath("agent_writes/session.md", [heading]);
+      const sourceFile = "agent_writes/session.md";
+      const replace = Boolean(params.replace);
+      const source = (params.source || "agent").trim() || "agent";
+      const contentHash = createHash("sha256").update(content).digest("hex");
+
+      if (!replace) {
+        const duplicate = this.db
+          .prepare(
+            `SELECT id FROM memory_direct
+             WHERE content_hash = ?
+               AND created_at > (unixepoch() - 60)
+             ORDER BY created_at DESC
+             LIMIT 1`,
+          )
+          .get(contentHash) as Record<string, unknown> | undefined;
+        if (duplicate) {
+          return ok(
+            {
+              inserted: false,
+              deduped: true,
+              lookup_path: lookupPath,
+              heading,
+            },
+            started,
+          );
+        }
+      }
+
+      const lines = content.split(/\r?\n/);
+      const startLine = 1;
+      const endLine = Math.max(1, lines.length);
+      const nowIso = utcIso();
+
+      const tx = this.db.transaction(() => {
+        if (replace) {
+          this.db.prepare("DELETE FROM memory_chunks WHERE lookup_path = ?").run(lookupPath);
+        }
+        const maxOrderRow = this.db
+          .prepare("SELECT COALESCE(MAX(chunk_order), -1) AS max_order FROM memory_chunks WHERE lookup_path = ?")
+          .get(lookupPath) as Record<string, unknown>;
+        const nextOrder = Number(maxOrderRow.max_order || -1) + 1;
+
+        const insertResult = this.db
+          .prepare(
+            `INSERT INTO memory_chunks(
+              lookup_path, parent_path, chunk_order, source, content, token_count,
+              source_file, start_line, end_line, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            lookupPath,
+            parentPath(lookupPath),
+            nextOrder,
+            "agent",
+            content,
+            estimateTokens(content),
+            sourceFile,
+            startLine,
+            endLine,
+            nowIso,
+            nowIso,
+          );
+        const chunkId = Number(insertResult.lastInsertRowid);
+        this.db
+          .prepare("INSERT OR IGNORE INTO memory_index(chunk_id, access_count, last_accessed) VALUES (?, 0, NULL)")
+          .run(chunkId);
+        this.db
+          .prepare(
+            `INSERT INTO memory_direct(chunk_id, lookup_path, heading, source_file, content_hash, source)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(chunkId, lookupPath, heading, sourceFile, contentHash, source);
+      });
+      tx();
+
+      this.rebuildLookupPaths();
+      this.rebuildTerms();
+      this.rebuildFacts();
+
+      return ok(
+        {
+          inserted: true,
+          deduped: false,
+          lookup_path: lookupPath,
+          heading,
+          replace,
+        },
+        started,
+      );
+    } catch (e) {
+      return err("DB_ERROR", "Failed memory_save", { reason: String(e) }, started);
+    }
+  }
+
+  relate(params: { subject: string; predicate: string; object: string }): EnvelopeOk | EnvelopeErr {
+    const started = Date.now();
+    try {
+      const subject = coerceLookupPath(params.subject || "");
+      const predicate = slugify(params.predicate || "related_to");
+      const object = coerceLookupPath(params.object || "");
+      if (!subject || !predicate || !object) {
+        return err("INVALID_RELATION", "subject, predicate, and object are required", {}, started);
+      }
+
+      this.db
+        .prepare("INSERT INTO memory_relations(subject, predicate, object, source) VALUES (?, ?, ?, 'agent')")
+        .run(subject, predicate, object);
+      return ok({ subject, predicate, object, saved: true }, started);
+    } catch (e) {
+      return err("DB_ERROR", "Failed memory_relate", { reason: String(e) }, started);
+    }
+  }
+
+  getRelatedChunks(lookupPath: string): Array<Record<string, unknown>> {
+    const pathValue = coerceLookupPath(lookupPath);
+    const outbound = this.db
+      .prepare(
+        `SELECT c.*, i.access_count, i.last_accessed, r.predicate AS via_relation
+         FROM memory_relations r
+         JOIN memory_chunks c ON c.lookup_path = r.object
+         LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
+         WHERE r.subject = ?
+         ORDER BY r.created_at DESC, c.chunk_order ASC
+         LIMIT 12`,
+      )
+      .all(pathValue) as Array<Record<string, unknown>>;
+    const inbound = this.db
+      .prepare(
+        `SELECT c.*, i.access_count, i.last_accessed, r.predicate AS via_relation
+         FROM memory_relations r
+         JOIN memory_chunks c ON c.lookup_path = r.subject
+         LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
+         WHERE r.object = ?
+         ORDER BY r.created_at DESC, c.chunk_order ASC
+         LIMIT 12`,
+      )
+      .all(pathValue) as Array<Record<string, unknown>>;
+    return [...outbound, ...inbound];
   }
 
   private recordAccess(chunkIds: number[]): void {
@@ -1390,6 +1591,32 @@ export class NodeMemoryMunchBackend {
         }
       }
       if (expanded > 0) trace.push({ stage: "parent_expand", detail: `added=${expanded}` });
+
+      let relationAdded = 0;
+      const relationAnchors = [...hitsById.values()]
+        .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+        .slice(0, Math.max(1, Math.min(12, limit * 2)));
+      for (const anchor of relationAnchors) {
+        const anchorPath = String(anchor.lookup_path || "");
+        if (!anchorPath) continue;
+        const anchorScore = Number(anchor.score || 0);
+        for (const row of this.getRelatedChunks(anchorPath)) {
+          const relationScore = Math.max(0.3, anchorScore * 0.7);
+          const h = rowToHit(row, relationScore, this.settings.snippetChars);
+          const relationPred = String(row.via_relation || "").trim();
+          if (relationPred) h.via_relation = relationPred;
+          const id = Number(h.chunk_id || 0);
+          const prev = hitsById.get(id);
+          if (!prev) {
+            hitsById.set(id, h);
+            relationAdded += 1;
+          } else if (relationScore > Number(prev.score || 0)) {
+            const merged = { ...prev, ...h, score: Number(relationScore.toFixed(4)) };
+            hitsById.set(id, merged);
+          }
+        }
+      }
+      if (relationAdded > 0) trace.push({ stage: "relation_expand", detail: `added=${relationAdded}` });
 
       let hits = [...hitsById.values()].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
       hits = applyTokenBudget(hits.slice(0, limit), maxTokens);

@@ -46,6 +46,26 @@ export class MemoryMunchRawApi {
     return this.client.call(["chunk_fetch", "--chunk_id", String(Math.trunc(chunkId))]);
   }
 
+  memorySave(params: { content: string; path?: string; heading?: string; replace?: boolean }) {
+    const args = ["memory_save", "--content", params.content];
+    if (params.path?.trim()) args.push("--path", params.path.trim());
+    if (params.heading?.trim()) args.push("--heading", params.heading.trim());
+    if (typeof params.replace === "boolean") args.push("--replace", params.replace ? "true" : "false");
+    return this.client.call(args);
+  }
+
+  memoryRelate(params: { subject: string; predicate: string; object: string }) {
+    return this.client.call([
+      "memory_relate",
+      "--subject",
+      params.subject,
+      "--predicate",
+      params.predicate,
+      "--object",
+      params.object,
+    ]);
+  }
+
   savings() {
     return this.client.call(["savings"]);
   }
