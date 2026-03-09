@@ -31,41 +31,38 @@ def test_openclaw_style_memory_fixture_ingest(tmp_path: Path):
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
     )
     db = Database(str(db_path))
     db.init_schema()
 
     result = run_index(db, settings, scope="all", cwd=tmp_path)
-    assert result["indexed_chunks"] >= 4
+    assert result["indexed_chunks"] >= 6
 
     roots = path_root(db)
     # File path prefix makes "memory" the single universal root.
     assert "memory" in roots["items"]
 
-    children = path_children(db, "memory.longtermmemory", limit=50, cursor=None)
-    assert any(item["lookup_path"] == "memory.longtermmemory.decisions" for item in children["items"])
+    children = path_children(db, "memory.people", limit=50, cursor=None)
+    assert any(item["lookup_path"] == "memory.people.people_index" for item in children["items"])
 
-    longterm = path_lookup(db, settings, path="memory.longtermmemory", max_tokens=1200, limit=10)
-    assert longterm["items"]
-    first = longterm["items"][0]
-    assert first["path"] == "MEMORY.md"
-    # Line 2 contains the first paragraph after heading in fixture.
-    assert first["startLine"] == 2
-    assert first["endLine"] >= 2
-    assert "555-0100" in first["snippet"]
+    people = path_lookup(db, settings, path="memory.people.people_index.work", max_tokens=1200, limit=10)
+    assert people["items"]
+    first = people["items"][0]
+    assert first["path"] == "memory/people/people-index.md"
+    assert "Priya Shah" in first["snippet"]
 
     search = text_search(
         db,
         settings,
         query="router migration VLAN10",
-        path_prefix="memory.2026_02_25.dailynetworkops",
+        path_prefix="memory.daily.2026_02_journal.network_ops",
         max_tokens=1200,
         limit=10,
     )
     assert search["items"]
-    assert search["items"][0]["path"] == "memory/2026-02-25.md"
+    assert search["items"][0]["path"] == "memory/daily/2026-02-journal.md"
 
     cid = search["items"][0]["chunk_id"]
     fetched = chunk_fetch(db, cid)
@@ -91,7 +88,7 @@ def test_symlinked_markdown_is_ignored_by_default(tmp_path: Path):
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
         follow_symlinks=False,
     )
