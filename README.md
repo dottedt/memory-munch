@@ -4,7 +4,7 @@
 
 # Memory-Munch
 
-Better memory retrieval for OpenClaw. Fast, local, and token safe.
+Better memory retrieval for OpenClaw. It's deterministic memory retrieval that's fast, local, and token-efficient.
 
 ## Credits
 
