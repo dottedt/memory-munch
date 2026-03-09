@@ -4,6 +4,9 @@
 
 # Memory-Munch
 
+[![npm version](https://img.shields.io/npm/v/%40dottedt%2Fmemory-munch-tools)](https://www.npmjs.com/package/@dottedt/memory-munch-tools)
+[![OpenClaw Community PR](https://img.shields.io/badge/OpenClaw-community%20plugins-blue)](https://docs.openclaw.ai/plugins/community)
+
 Better memory retrieval for OpenClaw. It's deterministic memory retrieval that's fast, local, and token-efficient.
 
 ## Credits
