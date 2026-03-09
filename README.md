@@ -65,7 +65,7 @@ uv pip install -e .
 bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
-### 5) Verify installation
+## Verify Installation (Self-Test)
 
 ```bash
 bash ./scripts/verify_openclaw_memory_munch.sh
@@ -74,14 +74,15 @@ bash ./scripts/verify_openclaw_memory_munch.sh
 This runs an isolated one-shot verification (Hitchhiker's Guide / answer `42`)
 that does not depend on your personal memory files.
 
-That verification is only a self-test. It does not index or modify your real memory workspace.
+This verification is only a self-test. It does not index or modify your real memory workspace.
 
-Default plugin behavior after install (real runtime):
+## Runtime Defaults (Real Use)
 
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
 - `exposeRawTools=false`
-- Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
+
+Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
 
 Edit `roots` only if your memory directories live outside the default OpenClaw workspace.
 
