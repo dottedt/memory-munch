@@ -65,6 +65,11 @@ uv pip install -e .
 bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
+Install safety:
+- Non-destructive for the rest of OpenClaw config.
+- Only memory-munch-managed keys are changed (`plugins.entries.memory-munch-tools.*`, `plugins.slots.memory`, and optionally `plugins.allow`).
+- A backup snapshot is created before changes.
+
 The installer prints:
 - backup snapshot location
 - plugin file diff report (`plugin_dir.diff`)
