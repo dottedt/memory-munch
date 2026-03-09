@@ -6,6 +6,15 @@
 
 Better memory retrieval for OpenClaw. Fast, local, and token safe.
 
+## Credits
+
+`memory-munch` was inspired by **jcodemunch-mcp** by JJ Gravelle:
+
+- https://github.com/jgravelle/jcodemunch-mcp
+- https://www.youtube.com/@jjgravelle
+
+If you do coding work with AI and need/want to save a shit ton of tokens, definatly chack out J.Grabelle's work.
+
 **memory-munch** is an OpenClaw plugin with an MCP-backed retrieval layer that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
 
 No embedding model. No external services. No cloud calls. Just local keyword/path retrieval with hard token caps so it never blows up your context window.
@@ -33,7 +42,7 @@ git --version
 ### 2) Download memory-munch and enter the directory
 
 ```bash
-git clone http://192.168.86.2:3000/scott/memory-munch.git
+git clone https://github.com/dottedt/memory-munch.git
 cd memory-munch
 ```
 
@@ -89,13 +98,3 @@ Optional: disable automatic watcher
 openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
 openclaw daemon restart
 ```
-
-## Credits
-
-`memory-munch` was inspired by **jcodemunch-mcp** by JJ Gravelle:
-
-- https://github.com/jgravelle/jcodemunch-mcp
-- https://www.youtube.com/@jjgravelle
-
-If you do coding work with OpenClaw and want to save tokens, definitely check
-out his work.
