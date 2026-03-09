@@ -14,68 +14,62 @@ When memory-munch has no confident hit, it can fall back to OpenClaw's native ve
 
 If you use OpenClaw's memory and find it dumping too much, or too little, into context, this is for you.
 
-## Install
+## Quick Start
 
-If you are starting from scratch, follow these steps in order.
+If you already have OpenClaw and Python 3.11+, this is the fastest path:
 
-### Step 1. Check prerequisites
+```bash
+pip install -e .
+./scripts/install_openclaw_memory_munch_plugin.sh
+./scripts/verify_openclaw_memory_munch.sh "Which lead asked for temporary searchable inbox before CRM sync? Give just the name."
+```
 
-You need:
+## Installation
 
-- Python `3.11` or newer
-- OpenClaw installed and available in your shell (`openclaw` command)
+### 1) Prerequisites
 
-Quick check:
+- Python `3.11+`
+- OpenClaw CLI available in your shell
+
+Check:
 
 ```bash
 python3 --version
 openclaw --version
 ```
 
-If either command fails, install that dependency first.
-
-### Step 2. Install memory-munch (Python package)
+### 2) Install memory-munch
 
 ```bash
 pip install -e .
-# or with uv
+# or (if you use uv)
 uv pip install -e .
 ```
 
-### Step 3. Install the plugin into OpenClaw
+### 3) Install plugin into OpenClaw
 
 ```bash
 ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
-Defaults now:
+Default plugin behavior:
 
-- `autoIndexWatch=true` (plugin-managed background watcher via OpenClaw service)
+- `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
 - `exposeRawTools=false`
 
-### Step 4. Confirm it works
+### 4) Verify installation
 
 ```bash
 ./scripts/verify_openclaw_memory_munch.sh "Which lead asked for temporary searchable inbox before CRM sync? Give just the name."
 ```
 
-### Step 5. Optional settings
+## Indexing
 
-Disable automatic indexing watcher if needed:
+Indexing is automatic by default through the plugin service (`autoIndexWatch=true`).
+In normal use, you should not need manual indexing commands.
 
-```bash
-openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
-openclaw daemon restart
-```
-
-## Indexing behavior (important)
-
-`memory-munch` keeps the index up to date automatically through the plugin-managed
-watcher service (`autoIndexWatch=true` by default). You normally do not need to
-run indexing commands yourself.
-
-Run manual commands only for rare recovery/debug cases (for example after moving
+Use manual indexing only for recovery/debug cases (for example, after moving
 large memory folders or resetting state):
 
 ```bash
@@ -83,9 +77,16 @@ dmemorymunch-mpc-admin init-db
 dmemorymunch-mpc-admin index --scope all
 ```
 
-Your config file is at `~/.openclaw/workspace/dmemorymunch-mpc.toml`.
-Only edit `roots` if your memory directories live outside the default OpenClaw
-workspace.
+Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
+
+Edit `roots` only if your memory directories live outside the default OpenClaw workspace.
+
+Optional: disable automatic watcher
+
+```bash
+openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
+openclaw daemon restart
+```
 
 ## Credits
 
