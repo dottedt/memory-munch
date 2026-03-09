@@ -15,6 +15,8 @@ Memory-Munch was inspired by **jcodemunch-mcp** by JJ Gravelle:
 
 If you do coding work with AI and want to save a butt ton of tokens, definitely check out J. Gravelle's work. Tell him DottedT says HI.
 
+---
+
 **Memory-Munch** is an OpenClaw plugin with an MCP-backed retrieval layer that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
 
 No embedding model. No external services. No cloud calls. Just local keyword/path retrieval with hard token caps so it never blows up your context window.
