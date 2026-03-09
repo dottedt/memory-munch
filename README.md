@@ -81,10 +81,18 @@ This verification is only a self-test. It does not index or modify your real mem
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
 - `exposeRawTools=false`
+- `roots=["~/.openclaw/workspace"]` in `~/.openclaw/workspace/dmemorymunch-mpc.toml`
 
 Config file location: `~/.openclaw/workspace/dmemorymunch-mpc.toml`
 
 Edit `roots` only if your memory directories live outside the default OpenClaw workspace.
+
+Optional: disable automatic watcher
+
+```bash
+openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
+openclaw daemon restart
+```
 
 ## Indexing
 
@@ -100,11 +108,4 @@ large memory folders or resetting state):
 ```bash
 dmemorymunch-mpc-admin init-db
 dmemorymunch-mpc-admin index --scope all
-```
-
-Optional: disable automatic watcher
-
-```bash
-openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
-openclaw daemon restart
 ```
