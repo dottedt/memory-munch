@@ -14,55 +14,57 @@ When memory-munch has no confident hit, it can fall back to OpenClaw's native ve
 
 If you use OpenClaw's memory and find it dumping too much, or too little, into context, this is for you.
 
-## Quick Start
-
-If you already have OpenClaw and Python 3.11+, this is the fastest path:
-
-```bash
-pip install -e .
-./scripts/install_openclaw_memory_munch_plugin.sh
-./scripts/verify_openclaw_memory_munch.sh "Which lead asked for temporary searchable inbox before CRM sync? Give just the name."
-```
-
-## Installation
+## Installation (from zero)
 
 ### 1) Prerequisites
 
 - Python `3.11+`
-- OpenClaw CLI available in your shell
+- OpenClaw installed (`openclaw` command works)
+- Git
 
-Check:
+Check prerequisites:
 
 ```bash
 python3 --version
 openclaw --version
+git --version
 ```
 
-### 2) Install memory-munch
+### 2) Download memory-munch and enter the directory
+
+```bash
+git clone http://192.168.86.2:3000/scott/memory-munch.git
+cd memory-munch
+```
+
+### 3) Install the Python package
 
 ```bash
 pip install -e .
-# or (if you use uv)
+# or, if you use uv:
 uv pip install -e .
 ```
 
-### 3) Install plugin into OpenClaw
+### 4) Install the OpenClaw plugin
 
 ```bash
-./scripts/install_openclaw_memory_munch_plugin.sh
+bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
-Default plugin behavior:
+### 5) Verify installation
+
+```bash
+bash ./scripts/verify_openclaw_memory_munch.sh
+```
+
+This runs an isolated one-shot verification (Hitchhiker's Guide / answer `42`)
+that does not depend on your personal memory files.
+
+Default plugin behavior after install:
 
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
 - `exposeRawTools=false`
-
-### 4) Verify installation
-
-```bash
-./scripts/verify_openclaw_memory_munch.sh "Which lead asked for temporary searchable inbox before CRM sync? Give just the name."
-```
 
 ## Indexing
 
