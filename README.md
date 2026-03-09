@@ -1,25 +1,25 @@
 <p align="center">
-  <img src="memory-munch-logo.png" alt="memory-munch" width="200" />
+  <img src="memory-munch-logo.png" alt="Memory-Munch" width="200" />
 </p>
 
-# memory-munch
+# Memory-Munch
 
 Better memory retrieval for OpenClaw. Fast, local, and token safe.
 
 ## Credits
 
-`memory-munch` was inspired by **jcodemunch-mcp** by JJ Gravelle:
+Memory-Munch was inspired by **jcodemunch-mcp** by JJ Gravelle:
 
 - https://github.com/jgravelle/jcodemunch-mcp
 - https://www.youtube.com/@jjgravelle
 
 If you do coding work with AI and want to save a butt ton of tokens, definitely check out J. Gravelle's work. Tell him DottedT says HI.
 
-**memory-munch** is an OpenClaw plugin with an MCP-backed retrieval layer that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
+**Memory-Munch** is an OpenClaw plugin with an MCP-backed retrieval layer that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
 
 No embedding model. No external services. No cloud calls. Just local keyword/path retrieval with hard token caps so it never blows up your context window.
 
-When memory-munch has no confident hit, it falls back to OpenClaw's native vector memory search. It will still return a useful memory result path when possible.
+When Memory-Munch has no confident hit, it falls back to OpenClaw's native vector memory search. It will still return a useful memory result path when possible.
 
 If you use OpenClaw's memory and find it dumping too much, or too little, into context, this is for you.
 
@@ -27,7 +27,7 @@ If you use OpenClaw's memory and find it dumping too much, or too little, into c
 
 Free for personal and non-commercial use.
 
-If a company wants to incorporate memory-munch into internal systems, products, or services, a paid commercial license is required from the project owner. See [`LICENSE`](LICENSE).
+If a company wants to incorporate Memory-Munch into internal systems, products, or services, a paid commercial license is required from the project owner. See [`LICENSE`](LICENSE).
 
 ## Installation (from zero)
 
@@ -44,7 +44,7 @@ openclaw --version
 git --version
 ```
 
-### 2) Download memory-munch and enter the directory
+### 2) Download Memory-Munch and enter the directory
 
 ```bash
 git clone https://github.com/dottedt/memory-munch.git
@@ -67,7 +67,7 @@ bash ./scripts/install_openclaw_memory_munch_plugin.sh
 
 Install safety:
 - Non-destructive for the rest of OpenClaw config.
-- Only memory-munch-managed keys are changed (`plugins.entries.memory-munch-tools.*`, `plugins.slots.memory`, and optionally `plugins.allow`).
+- Only Memory-Munch-managed keys are changed (`plugins.entries.memory-munch-tools.*`, `plugins.slots.memory`, and optionally `plugins.allow`).
 - A backup snapshot is created before changes.
 
 The installer prints:
@@ -80,7 +80,7 @@ The installer prints:
 bash ./scripts/undo_openclaw_memory_munch_install.sh
 ```
 
-Rollback restores only memory-munch-managed OpenClaw keys and plugin files from the captured install snapshot. It does not overwrite your entire `~/.openclaw/openclaw.json`.
+Rollback restores only Memory-Munch-managed OpenClaw keys and plugin files from the captured install snapshot. It does not overwrite your entire `~/.openclaw/openclaw.json`.
 
 Use a specific snapshot if needed:
 

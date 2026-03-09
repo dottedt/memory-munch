@@ -1,4 +1,4 @@
-# memory-munch — Technical Reference
+# Memory-Munch — Technical Reference
 
 This document covers internals, architecture, and the complete reference for all configuration, CLI, and tool parameters. For installation and everyday use, see [README.md](README.md).
 
@@ -224,7 +224,7 @@ Three tools are always registered and are the primary interface for agents:
 | `memory_get` | Reads a bounded line range from the source file directly (not the chunk index). Accepts `path`, `from`, `lines`. Matches OpenClaw's built-in `memory_get` schema. |
 | `memory_lookup` | Path-first retrieval: routes through `path_lookup` when the query looks like a dot-path, otherwise falls back to `text_search`. Registered as optional. |
 
-The `memory_search` tool matches OpenClaw's built-in name, so agents and skills that call `memory_search` are routed through memory-munch without any changes to the agent.
+The `memory_search` tool matches OpenClaw's built-in name, so agents and skills that call `memory_search` are routed through Memory-Munch without any changes to the agent.
 
 When `exposeRawTools` is `true`, the five low-level `memory_munch_*` tools are also registered (see [MCP tools](#mcp-tools)).
 
