@@ -107,7 +107,7 @@ that does not depend on your personal memory files.
 
 This verification is only a self-test. It does not index or modify your real memory workspace.
 
-## Runtime Defaults (Real Use)
+## Runtime Defaults
 
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
