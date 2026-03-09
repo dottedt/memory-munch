@@ -65,6 +65,24 @@ uv pip install -e .
 bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
+The installer prints:
+- backup snapshot location
+- plugin file diff report (`plugin_dir.diff`)
+
+## Uninstall / Rollback
+
+```bash
+bash ./scripts/undo_openclaw_memory_munch_install.sh
+```
+
+Rollback restores only memory-munch-managed OpenClaw keys and plugin files from the captured install snapshot. It does not overwrite your entire `~/.openclaw/openclaw.json`.
+
+Use a specific snapshot if needed:
+
+```bash
+bash ./scripts/undo_openclaw_memory_munch_install.sh --backup-dir ~/.openclaw/backups/memory-munch-tools/<snapshot-id>
+```
+
 ## Verify Installation (Self-Test)
 
 ```bash

@@ -80,6 +80,26 @@ set +a
 
 OPENCLAW_BIN="${OPENCLAW_BIN:-$(command -v openclaw || true)}"
 
+if [[ -z "${OPENCLAW_BIN}" ]]; then
+  echo "openclaw CLI not found in PATH." >&2
+  exit 1
+fi
+
+restore_json_key() {
+  local path="$1"
+  local file="$2"
+  if [[ ! -f "${file}" ]]; then
+    return 0
+  fi
+  local value
+  value="$(cat "${file}")"
+  if [[ "${value}" == "__MM_MISSING__" ]]; then
+    "${OPENCLAW_BIN}" config unset "${path}" >/dev/null || true
+  else
+    "${OPENCLAW_BIN}" config set --strict-json "${path}" "${value}" >/dev/null
+  fi
+}
+
 mkdir -p "${PLUGIN_DST}"
 
 if [[ "${PREV_PLUGIN_DIR_SNAPSHOT:-0}" == "1" && -d "${BACKUP_DIR}/plugin_dir" ]]; then
@@ -103,8 +123,12 @@ else
   fi
 fi
 
-if [[ "${PREV_OPENCLAW_CONFIG_EXISTS:-0}" == "1" ]]; then
-  cp -f "${BACKUP_DIR}/openclaw.json" "${OPENCLAW_CONFIG_PATH}"
+restore_json_key "plugins.entries.memory-munch-tools.enabled" "${BACKUP_DIR}/prior_enabled.json"
+restore_json_key "plugins.entries.memory-munch-tools.config" "${BACKUP_DIR}/prior_plugin_config.json"
+restore_json_key "plugins.slots.memory" "${BACKUP_DIR}/prior_memory_slot.json"
+
+if [[ -f "${BACKUP_DIR}/allowlist_touched" && "$(cat "${BACKUP_DIR}/allowlist_touched")" == "1" ]]; then
+  restore_json_key "plugins.allow" "${BACKUP_DIR}/prior_plugins_allow.json"
 fi
 
 if [[ "${CREATED_CONFIG_PATH:-0}" == "1" ]]; then
@@ -112,13 +136,18 @@ if [[ "${CREATED_CONFIG_PATH:-0}" == "1" ]]; then
 fi
 
 if [[ "${NO_RESTART}" != "1" && -n "${OPENCLAW_BIN}" ]]; then
-  "${OPENCLAW_BIN}" daemon restart || true
+  "${OPENCLAW_BIN}" daemon restart >/dev/null || true
+  echo "Restarted OpenClaw daemon"
 fi
 
 echo "Restored from backup: ${BACKUP_DIR}"
 echo "Plugin path restored: ${PLUGIN_DST}"
-if [[ "${PREV_OPENCLAW_CONFIG_EXISTS:-0}" == "1" ]]; then
-  echo "OpenClaw config restored: ${OPENCLAW_CONFIG_PATH}"
+echo "OpenClaw config keys restored (memory-munch-only):"
+echo "- plugins.entries.memory-munch-tools.enabled"
+echo "- plugins.entries.memory-munch-tools.config"
+echo "- plugins.slots.memory"
+if [[ -f "${BACKUP_DIR}/allowlist_touched" && "$(cat "${BACKUP_DIR}/allowlist_touched")" == "1" ]]; then
+  echo "- plugins.allow"
 fi
 if [[ "${CREATED_CONFIG_PATH:-0}" == "1" ]]; then
   echo "Removed config created by install: ${CONFIG_PATH}"

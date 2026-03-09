@@ -184,6 +184,41 @@ if [[ ! -d "${PLUGIN_SRC}" ]]; then
   exit 1
 fi
 
+oc_set() {
+  local path="$1"
+  local value="$2"
+  "${OPENCLAW_BIN}" config set "${path}" "${value}" >/dev/null
+}
+
+oc_set_json() {
+  local path="$1"
+  local value="$2"
+  "${OPENCLAW_BIN}" config set --strict-json "${path}" "${value}" >/dev/null
+}
+
+oc_get_json_or_missing() {
+  local path="$1"
+  local raw
+  if ! raw="$("${OPENCLAW_BIN}" config get "${path}" --json 2>/dev/null)"; then
+    echo "__MM_MISSING__"
+    return 0
+  fi
+  "${PYTHON_BIN}" - <<'PY' "${raw}"
+import json
+import sys
+
+raw = sys.argv[1].strip()
+candidates = [raw] + [line.strip() for line in raw.splitlines()[::-1] if line.strip()]
+for cand in candidates:
+    try:
+        print(json.dumps(json.loads(cand)))
+        raise SystemExit(0)
+    except Exception:
+        pass
+print("__MM_MISSING__")
+PY
+}
+
 BACKUP_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 BACKUP_DIR="${BACKUP_ROOT}/${BACKUP_ID}"
 mkdir -p "${BACKUP_DIR}"
@@ -213,10 +248,25 @@ if [[ -f "${OPENCLAW_CONFIG_PATH}" ]]; then
   cp -p "${OPENCLAW_CONFIG_PATH}" "${BACKUP_DIR}/openclaw.json"
 fi
 
+echo "$(oc_get_json_or_missing plugins.entries.memory-munch-tools.enabled)" > "${BACKUP_DIR}/prior_enabled.json"
+echo "$(oc_get_json_or_missing plugins.entries.memory-munch-tools.config)" > "${BACKUP_DIR}/prior_plugin_config.json"
+echo "$(oc_get_json_or_missing plugins.slots.memory)" > "${BACKUP_DIR}/prior_memory_slot.json"
+echo "$(oc_get_json_or_missing plugins.allow)" > "${BACKUP_DIR}/prior_plugins_allow.json"
+echo "0" > "${BACKUP_DIR}/allowlist_touched"
+
 mkdir -p "${WORKSPACE_DIR}" "${PLUGIN_DST}"
 rm -rf "${PLUGIN_DST}"
 mkdir -p "${PLUGIN_DST}"
 cp -a "${PLUGIN_SRC}/." "${PLUGIN_DST}/"
+
+if [[ "${PREV_PLUGIN_DIR_SNAPSHOT}" == "1" && -d "${BACKUP_DIR}/plugin_dir" ]]; then
+  diff -ruN "${BACKUP_DIR}/plugin_dir" "${PLUGIN_DST}" > "${BACKUP_DIR}/plugin_dir.diff" || true
+else
+  (
+    cd "${PLUGIN_DST}"
+    find . -type f | sort | sed 's#^\./#ADDED: #' > "${BACKUP_DIR}/plugin_dir.diff"
+  )
+fi
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
   cp -f "${REPO_ROOT}/dmemorymunch-mpc.toml" "${CONFIG_PATH}"
@@ -252,9 +302,12 @@ print(json.dumps({
 PY
 )"
 
-"${OPENCLAW_BIN}" config set plugins.entries.memory-munch-tools.enabled true
-"${OPENCLAW_BIN}" config set --strict-json plugins.entries.memory-munch-tools.config "${CFG_JSON}"
-"${OPENCLAW_BIN}" config set plugins.slots.memory memory-munch-tools
+oc_set plugins.entries.memory-munch-tools.enabled true
+echo "Configured plugins.entries.memory-munch-tools.enabled=true"
+oc_set_json plugins.entries.memory-munch-tools.config "${CFG_JSON}"
+echo "Configured plugins.entries.memory-munch-tools.config"
+oc_set plugins.slots.memory memory-munch-tools
+echo "Configured plugins.slots.memory=memory-munch-tools"
 
 warn_allowlist() {
   cat >&2 <<'WARN'
@@ -267,7 +320,10 @@ WARN
 
 enable_allowlist_entry() {
   local current merged
-  current="$("${OPENCLAW_BIN}" config get plugins.allow --json 2>/dev/null || echo "[]")"
+  current="$(oc_get_json_or_missing plugins.allow)"
+  if [[ "${current}" == "__MM_MISSING__" ]]; then
+    current="[]"
+  fi
   merged="$("${PYTHON_BIN}" - <<PY
 import json
 raw = """${current}""".strip() or "[]"
@@ -286,7 +342,8 @@ if "memory-munch-tools" not in out:
 print(json.dumps(out))
 PY
 )"
-  "${OPENCLAW_BIN}" config set --strict-json plugins.allow "${merged}"
+  oc_set_json plugins.allow "${merged}"
+  echo "1" > "${BACKUP_DIR}/allowlist_touched"
   echo "Added memory-munch-tools to plugins.allow"
 }
 
@@ -318,7 +375,8 @@ case "${ALLOWLIST_MODE}" in
 esac
 
 if [[ "${NO_RESTART}" != "1" ]]; then
-  "${OPENCLAW_BIN}" daemon restart
+  "${OPENCLAW_BIN}" daemon restart >/dev/null
+  echo "Restarted OpenClaw daemon"
 fi
 
 echo "Installed memory-munch-tools to: ${PLUGIN_DST}"
@@ -328,3 +386,4 @@ echo "Memory-Munch config: ${CONFIG_PATH}"
 echo "Python: ${PYTHON_BIN}"
 echo "Bridge: ${BRIDGE_SCRIPT}"
 echo "Backup snapshot: ${BACKUP_DIR}"
+echo "Plugin file diff report: ${BACKUP_DIR}/plugin_dir.diff"
