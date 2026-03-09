@@ -47,7 +47,7 @@ export function resolvePluginCfg(api: OpenClawPluginApi): ResolvedPluginCfg {
         ? cfg.autoIndexWatchIntervalSec
         : 1.5,
     autoFlushOnCompaction:
-      typeof cfg.autoFlushOnCompaction === "boolean" ? cfg.autoFlushOnCompaction : true,
+      typeof cfg.autoFlushOnCompaction === "boolean" ? cfg.autoFlushOnCompaction : false,
   };
 }
 

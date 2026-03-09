@@ -36,7 +36,7 @@ function defaultSettings(): NodeBackendSettings {
     followSymlinks: false,
     maxTokensPerQuery: 1200,
     snippetChars: 200,
-    autoFlushOnCompaction: true,
+    autoFlushOnCompaction: false,
   };
 }
 
