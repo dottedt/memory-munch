@@ -212,7 +212,7 @@ Path navigation is faster, cheaper, and deterministic. Prefer it over text searc
 
 ## OpenClaw plugin
 
-`extensions/memory-munch-tools/` is the packaged OpenClaw plugin that wraps the Python backend.
+`extensions/memory-munch-tools/` is the packaged OpenClaw plugin and runs in-process on a Node + SQLite backend.
 
 ### Model-facing tools
 
@@ -234,16 +234,14 @@ These options are set in the OpenClaw plugin config (written by the install scri
 
 | Option | Default | Description |
 |---|---|---|
-| `pythonBin` | repo `.venv/bin/python` or `python3` | Python executable used to run the bridge script |
-| `bridgeScript` | `openclaw_memory_munch_bridge.py` | Path to the bridge CLI script |
 | `configPath` | `~/.openclaw/workspace/dmemorymunch-mpc.toml` | Path to the dmemorymunch config file |
-| `timeoutMs` | `15000` | Bridge subprocess timeout in milliseconds |
+| `timeoutMs` | `15000` | Tool timeout budget in milliseconds |
 | `autoInjectPromptContext` | `false` | Prepend memory snippets before each user message |
 | `exposeRawTools` | `false` | Register the low-level `memory_munch_*` tools (for power users and debugging) |
 | `autoIndexWatch` | `true` | Run a plugin-managed background watcher to keep the index up to date |
 | `autoIndexWatchIntervalSec` | `1.5` | Polling interval for the background watcher (minimum 0.5) |
 
-Environment variable overrides: `MEMORY_MUNCH_PYTHON`, `MEMORY_MUNCH_BRIDGE`, `MEMORY_MUNCH_CONFIG`, `MEMORY_MUNCH_AUTO_INJECT=1`, `MEMORY_MUNCH_EXPOSE_RAW_TOOLS=1`, `MEMORY_MUNCH_AUTO_INDEX_WATCH=0` (set to `0` to disable).
+Environment variable overrides: `MEMORY_MUNCH_CONFIG`, `MEMORY_MUNCH_AUTO_INJECT=1`, `MEMORY_MUNCH_EXPOSE_RAW_TOOLS=1`, `MEMORY_MUNCH_AUTO_INDEX_WATCH=0` (set to `0` to disable).
 
 ### Auto-inject mode
 
@@ -260,8 +258,7 @@ When `autoInjectPromptContext` is `true`, a `before_prompt_build` hook fires bef
 | `--state-dir <dir>` | `~/.openclaw` | OpenClaw state directory |
 | `--workspace <dir>` | `<state-dir>/workspace` | OpenClaw workspace directory |
 | `--config <path>` | `<workspace>/dmemorymunch-mpc.toml` | Config file path |
-| `--python <path>` | repo `.venv/bin/python` or `python3` | Python executable |
-| `--timeout-ms <n>` | `15000` | Bridge subprocess timeout |
+| `--timeout-ms <n>` | `15000` | Tool timeout budget |
 | `--allowlist-mode <m>` | `prompt` | `prompt` / `enable` / `skip` |
 | `--auto-inject-prompt` | `false` | `true` to enable `before_prompt_build` hook |
 | `--expose-raw-tools` | `false` | `true` to register low-level `memory_munch_*` tools |
@@ -323,36 +320,9 @@ snippet_chars = 200
 
 ---
 
-## Full CLI reference
+## Runtime behavior
 
-Two executables are installed:
-
-- `dmemorymunch-mpc` — MCP stdio server (registered with OpenClaw; not called directly in normal use)
-- `dmemorymunch-mpc-admin` — administrative commands
-
-### `dmemorymunch-mpc`
-
-```
-dmemorymunch-mpc [--config PATH] [--db PATH]
-```
-
-Starts the MCP server on stdio. OpenClaw invokes this automatically; you do not run it directly.
-
-### `dmemorymunch-mpc-admin` commands
-
-All commands accept `--config PATH` and `--db PATH`.
-
-| Command | Description |
-|---|---|
-| `init-db` | Create the database and apply schema migrations. Safe to re-run. |
-| `index --scope changed` | Re-index changed files only (default). |
-| `index --scope all` | Force re-index all files. |
-| `reindex` | Alias for `index --scope all`. |
-| `watch [--interval N]` | Poll for changes and reindex continuously (Ctrl+C to stop). Default interval: 1.5 s. |
-| `stats [--namespace-prefix P]` | Print chunk count and largest chunks, optionally scoped to a path prefix. |
-| `doctor` | Run `PRAGMA integrity_check` and verify FTS row count matches chunks. |
-| `savings` | Print cumulative token savings and estimated cost avoided. |
-| `serve` | Run the MCP server (same as `dmemorymunch-mpc`). |
+Memory-Munch now runs entirely in the OpenClaw plugin runtime (TypeScript + SQLite). There is no separate Python CLI or subprocess bridge.
 
 ---
 
@@ -366,21 +336,20 @@ Each tool response includes a `_meta` block with:
 - `total_tokens_saved` — cumulative since installation
 - `cost_avoided` — estimated dollar savings at current pricing for Claude Opus and GPT-5
 
-Savings are persisted to `~/.memorymunch/_savings.json` and accessible via `dmemorymunch-mpc-admin savings` or the `/savings` plugin command.
+Savings are persisted to `~/.memorymunch/_savings.json` and accessible via the `/savings` plugin command.
 
 The estimate is conservative: it measures retrieval savings only, based on `(raw_file_bytes - response_bytes) / 4`. It does not account for files that would otherwise be loaded wholesale into the context at session start.
 
 ---
 
-## The subprocess bridge
+## Backend runtime
 
-Each OpenClaw tool call spawns `openclaw_memory_munch_bridge.py` as a subprocess. The bridge is a thin CLI over the same Python functions used by the MCP server. Each invocation is independent. A configurable timeout (default 15 s) kills the subprocess if it hangs.
-
-The bridge accepts the same operations as the MCP tools: `path_root`, `path_children`, `path_lookup`, `text_search`, `chunk_fetch`, `savings`. It reads from the same SQLite database the indexer writes to.
+Tool calls stay in-process in the plugin (TypeScript + SQLite).
+Background indexing is plugin-managed and runs on an interval (`autoIndexWatchIntervalSec`).
 
 ### Background watcher service
 
-When `autoIndexWatch` is `true` (the default), the plugin registers an OpenClaw service that runs `dmemorymunch-mpc-admin watch` as a managed background process. The service starts with the OpenClaw daemon and stops cleanly on daemon shutdown (SIGTERM, with a 2-second SIGKILL fallback). This is separate from the per-call bridge subprocess — the watcher runs continuously; the bridge is spawned on demand.
+When `autoIndexWatch` is `true` (the default), the plugin registers an OpenClaw-managed in-process background watcher service.
 
 Disable the watcher:
 
@@ -395,8 +364,8 @@ openclaw daemon restart
 
 | | |
 |---|---|
-| Python | 3.11 or newer |
-| SQLite | Bundled with Python; no separate install needed |
+| Node runtime | Requires OpenClaw runtime with `node:sqlite` support |
+| SQLite | Local file-backed SQLite database |
 | Embedding model | Not used |
 | External services | None — fully local |
 | OpenClaw | Required for plugin installation |

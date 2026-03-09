@@ -25,6 +25,5 @@ for q in "${QUESTIONS[@]}"; do
   echo
   echo "=== Q: ${q}"
   "${OPENCLAW_BIN}" agent --agent "${AGENT_ID}" --session-id "${SESSION_ID}" --message "${q}" --json \
-    | python3 -c 'import sys,json; d=json.load(sys.stdin); p=d.get("result",{}).get("payloads",[]); print(p[-1]["text"] if p else "<no-payload>")'
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s||"{}");const p=d?.result?.payloads||[];console.log(p.length?String(p[p.length-1]?.text||""):"<no-payload>");});'
 done
-

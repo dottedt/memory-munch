@@ -20,7 +20,7 @@ If you do coding work with AI and want to save a butt ton of tokens, definitely 
 
 ---
 
-**Memory-Munch** is an OpenClaw plugin with an MCP-backed retrieval layer that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
+**Memory-Munch** is an OpenClaw plugin with a local retrieval layer (Node runtime by default, legacy Python MCP-compatible mode available) that gives your assistant smarter access to your memory files. It indexes `MEMORY.md` and your `memory/` folder into a local SQLite database and exposes model-facing memory tools for deterministic path-first retrieval.
 
 No embedding model. No external services. No cloud calls. Just local keyword/path retrieval with hard token caps so it never blows up your context window.
 
@@ -43,17 +43,10 @@ If a company wants to incorporate Memory-Munch into internal systems, products, 
 ## Installation (OpenClaw style)
 
 ### 1) Prerequisites
-Python 3.11+
 OpenClaw installed (`openclaw` command works)
 Git
 
-### 2) Install Memory-Munch Python backend
-
-```bash
-pip install "git+https://github.com/dottedt/memory-munch.git"
-```
-
-### 3) Install plugin from npm via OpenClaw
+### 2) Install plugin from npm via OpenClaw
 
 ```bash
 openclaw plugins install @dottedt/memory-munch-tools
@@ -62,12 +55,11 @@ openclaw config set plugins.slots.memory memory-munch-tools
 openclaw daemon restart
 ```
 
-### 4) Optional (developer/source install path)
+### 3) Optional (developer/source install path)
 
 ```bash
 git clone https://github.com/dottedt/memory-munch.git
 cd memory-munch
-pip install -e .
 bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
@@ -133,13 +125,7 @@ With `autoIndexWatch=true`, the plugin starts a watcher that:
 
 In normal use, you should not need manual indexing commands.
 
-Use manual indexing only for recovery/debug cases (for example, after moving
-large memory folders or resetting state):
-
-```bash
-dmemorymunch-mpc-admin init-db
-dmemorymunch-mpc-admin index --scope all
-```
+Use manual indexing only for recovery/debug cases. Restart OpenClaw after large memory-folder moves/resets to force a fresh index cycle.
 
 Optional: disable automatic watcher
 

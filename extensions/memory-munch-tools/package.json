@@ -22,7 +22,6 @@
   "files": [
     "index.ts",
     "openclaw.plugin.json",
-    "openclaw_memory_munch_bridge.py",
     "LICENSE",
     "sdk"
   ],

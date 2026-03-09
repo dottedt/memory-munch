@@ -1,4 +1,3 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { MemoryMunchClient, resolvePluginCfg } from "./sdk/client";
 import { readMemoryFileSnippet } from "./sdk/files";
@@ -54,7 +53,7 @@ export default function register(api: OpenClawPluginApi) {
   const client = new MemoryMunchClient(cfg);
   const raw = new MemoryMunchRawApi(client);
   const memory = new MemoryMunchModelApi(raw);
-  let watchProc: ChildProcessWithoutNullStreams | null = null;
+  let nodeWatchTimer: NodeJS.Timeout | null = null;
 
   if (cfg.autoInjectPromptContext) {
     api.on("before_prompt_build", async (event, ctx) => {
@@ -284,68 +283,30 @@ export default function register(api: OpenClawPluginApi) {
         api.logger.info("memory-munch: auto index watch disabled");
         return;
       }
-      if (watchProc) {
-        return;
+      if (nodeWatchTimer) return;
+      try {
+        await client.call(["index", "--scope", "changed"]);
+      } catch (e) {
+        api.logger.warn(`memory-munch index failed: ${String(e)}`);
       }
-
-      const args = [
-        "-m",
-        "dmemorymunch_mpc.cli",
-        "watch",
-        "--config",
-        cfg.configPath,
-        "--interval",
-        String(cfg.autoIndexWatchIntervalSec),
-      ];
-      watchProc = spawn(cfg.pythonBin, args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      });
-
-      watchProc.stdout.on("data", (d) => {
-        const msg = String(d).trim();
-        if (msg) api.logger.info(`memory-munch watch: ${msg}`);
-      });
-      watchProc.stderr.on("data", (d) => {
-        const msg = String(d).trim();
-        if (msg) api.logger.warn(`memory-munch watch stderr: ${msg}`);
-      });
-      watchProc.on("close", (code, signal) => {
-        api.logger.warn(
-          `memory-munch watch exited (code=${String(code)}, signal=${String(signal)})`,
-        );
-        watchProc = null;
-      });
-      watchProc.on("error", (e) => {
-        api.logger.error(`memory-munch watch failed: ${String(e)}`);
-      });
-
+      nodeWatchTimer = setInterval(async () => {
+        try {
+          await client.call(["index", "--scope", "changed"]);
+        } catch (e) {
+          api.logger.warn(`memory-munch index failed: ${String(e)}`);
+        }
+      }, Math.max(500, Math.floor(cfg.autoIndexWatchIntervalSec * 1000)));
       api.logger.info(
-        `memory-munch: auto index watch started (interval=${cfg.autoIndexWatchIntervalSec}s)`,
+        `memory-munch: node auto index watch started (interval=${cfg.autoIndexWatchIntervalSec}s)`,
       );
     },
     stop: async () => {
-      if (!watchProc) return;
-      const proc = watchProc;
-      watchProc = null;
-
-      await new Promise<void>((resolve) => {
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          resolve();
-        };
-        proc.once("close", () => done());
-        proc.kill("SIGTERM");
-        setTimeout(() => {
-          if (settled) return;
-          proc.kill("SIGKILL");
-          done();
-        }, 2000);
-      });
-
-      api.logger.info("memory-munch: auto index watch stopped");
+      if (nodeWatchTimer) {
+        clearInterval(nodeWatchTimer);
+        nodeWatchTimer = null;
+        client.close();
+        api.logger.info("memory-munch: node auto index watch stopped");
+      }
     },
   });
 }

@@ -7,7 +7,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STATE_DIR="${HOME}/.openclaw"
 WORKSPACE_DIR=""
 CONFIG_PATH=""
-PYTHON_BIN=""
 TIMEOUT_MS="15000"
 NO_RESTART="0"
 ALLOWLIST_MODE="prompt"
@@ -26,8 +25,7 @@ Options:
   --state-dir <dir>      OpenClaw state dir (default: ~/.openclaw)
   --workspace <dir>      OpenClaw workspace dir (default: <state-dir>/workspace)
   --config <path>        dmemorymunch config path (default: <workspace>/dmemorymunch-mpc.toml)
-  --python <path>        Python executable for bridge (default: repo .venv/bin/python or python3)
-  --timeout-ms <num>     Bridge timeout in ms (default: 15000)
+  --timeout-ms <num>     Tool timeout budget in ms (default: 15000)
   --allowlist-mode <m>   plugins.allow behavior: prompt|enable|skip (default: prompt)
   --auto-inject-prompt   Auto-inject snippets into prompts: true|false (default: false)
   --expose-raw-tools     Expose low-level memory_munch_* tools: true|false (default: false)
@@ -51,10 +49,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --config)
       CONFIG_PATH="$2"
-      shift 2
-      ;;
-    --python)
-      PYTHON_BIN="$2"
       shift 2
       ;;
     --timeout-ms)
@@ -150,20 +144,6 @@ if [[ -z "${CONFIG_PATH}" ]]; then
   CONFIG_PATH="${WORKSPACE_DIR}/dmemorymunch-mpc.toml"
 fi
 
-if [[ -z "${PYTHON_BIN}" ]]; then
-  if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
-    PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
-  else
-    PYTHON_BIN="$(command -v python3)"
-  fi
-fi
-
-if [[ ! -x "${PYTHON_BIN}" ]]; then
-  echo "Python not executable: ${PYTHON_BIN}" >&2
-  exit 1
-fi
-
-BRIDGE_SCRIPT="${REPO_ROOT}/scripts/openclaw_memory_munch_bridge.py"
 PLUGIN_SRC="${REPO_ROOT}/extensions/memory-munch-tools"
 PLUGIN_DST="${STATE_DIR}/extensions/memory-munch-tools"
 OPENCLAW_BIN="${OPENCLAW_BIN:-$(command -v openclaw || true)}"
@@ -174,8 +154,8 @@ if [[ -z "${OPENCLAW_BIN}" ]]; then
   exit 1
 fi
 
-if [[ ! -f "${BRIDGE_SCRIPT}" ]]; then
-  echo "Bridge script not found: ${BRIDGE_SCRIPT}" >&2
+if ! command -v node >/dev/null 2>&1; then
+  echo "node runtime not found in PATH." >&2
   exit 1
 fi
 
@@ -203,20 +183,14 @@ oc_get_json_or_missing() {
     echo "__MM_MISSING__"
     return 0
   fi
-  "${PYTHON_BIN}" - <<'PY' "${raw}"
-import json
-import sys
-
-raw = sys.argv[1].strip()
-candidates = [raw] + [line.strip() for line in raw.splitlines()[::-1] if line.strip()]
-for cand in candidates:
-    try:
-        print(json.dumps(json.loads(cand)))
-        raise SystemExit(0)
-    except Exception:
-        pass
-print("__MM_MISSING__")
-PY
+  node -e '
+const raw=(process.argv[1]||"").trim();
+const candidates=[raw, ...raw.split(/\n/).map(s=>s.trim()).filter(Boolean).reverse()];
+for (const cand of candidates){
+  try { console.log(JSON.stringify(JSON.parse(cand))); process.exit(0); } catch {}
+}
+console.log("__MM_MISSING__");
+' "${raw}"
 }
 
 BACKUP_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -287,19 +261,16 @@ PREV_OPENCLAW_CONFIG_EXISTS=${PREV_OPENCLAW_CONFIG_EXISTS}
 CREATED_CONFIG_PATH=${CREATED_CONFIG_PATH}
 EOF
 
-CFG_JSON="$("${PYTHON_BIN}" - <<PY
-import json
-print(json.dumps({
-  "pythonBin": "${PYTHON_BIN}",
-  "bridgeScript": "${BRIDGE_SCRIPT}",
+CFG_JSON="$(cat <<JSON
+{
   "configPath": "${CONFIG_PATH}",
-  "timeoutMs": int("${TIMEOUT_MS}"),
-  "autoInjectPromptContext": "${AUTO_INJECT_PROMPT}".lower() == "true",
-  "exposeRawTools": "${EXPOSE_RAW_TOOLS}".lower() == "true",
-  "autoIndexWatch": "${AUTO_INDEX_WATCH}".lower() == "true",
-  "autoIndexWatchIntervalSec": float("${AUTO_INDEX_WATCH_INTERVAL_SEC}")
-}))
-PY
+  "timeoutMs": ${TIMEOUT_MS},
+  "autoInjectPromptContext": ${AUTO_INJECT_PROMPT},
+  "exposeRawTools": ${EXPOSE_RAW_TOOLS},
+  "autoIndexWatch": ${AUTO_INDEX_WATCH},
+  "autoIndexWatchIntervalSec": ${AUTO_INDEX_WATCH_INTERVAL_SEC}
+}
+JSON
 )"
 
 oc_set plugins.entries.memory-munch-tools.enabled true
@@ -324,24 +295,15 @@ enable_allowlist_entry() {
   if [[ "${current}" == "__MM_MISSING__" ]]; then
     current="[]"
   fi
-  merged="$("${PYTHON_BIN}" - <<PY
-import json
-raw = """${current}""".strip() or "[]"
-try:
-    arr = json.loads(raw)
-except Exception:
-    arr = []
-if not isinstance(arr, list):
-    arr = []
-out = []
-for item in arr:
-    if isinstance(item, str) and item not in out:
-        out.append(item)
-if "memory-munch-tools" not in out:
-    out.append("memory-munch-tools")
-print(json.dumps(out))
-PY
-)"
+  merged="$(node -e '
+const raw=(process.argv[1]||"[]").trim()||"[]";
+let arr=[]; try{ arr=JSON.parse(raw); }catch{}
+if(!Array.isArray(arr)) arr=[];
+const out=[];
+for(const item of arr){ if(typeof item==="string" && !out.includes(item)) out.push(item); }
+if(!out.includes("memory-munch-tools")) out.push("memory-munch-tools");
+console.log(JSON.stringify(out));
+' "${current}")"
   oc_set_json plugins.allow "${merged}"
   echo "1" > "${BACKUP_DIR}/allowlist_touched"
   echo "Added memory-munch-tools to plugins.allow"
@@ -380,10 +342,8 @@ if [[ "${NO_RESTART}" != "1" ]]; then
 fi
 
 echo "Installed memory-munch-tools to: ${PLUGIN_DST}"
-echo "Configured plugin bridge config in OpenClaw."
+echo "Configured plugin config in OpenClaw."
 echo "Workspace: ${WORKSPACE_DIR}"
 echo "Memory-Munch config: ${CONFIG_PATH}"
-echo "Python: ${PYTHON_BIN}"
-echo "Bridge: ${BRIDGE_SCRIPT}"
 echo "Backup snapshot: ${BACKUP_DIR}"
 echo "Plugin file diff report: ${BACKUP_DIR}/plugin_dir.diff"

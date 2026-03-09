@@ -63,36 +63,21 @@ max_tokens_per_query = 1200
 snippet_chars = 200
 EOF
 
-PYTHON_BIN="$(python3 - <<'PY' "${ORIG_CFG_JSON}"
-import json, sys
-cfg = json.loads(sys.argv[1])
-print((cfg.get("pythonBin") or "python3").strip())
-PY
-)"
-
-if [[ -x "$(dirname "${PYTHON_BIN}")/dmemorymunch-mpc-admin" ]]; then
-  ADMIN_BIN="$(dirname "${PYTHON_BIN}")/dmemorymunch-mpc-admin"
-  "${ADMIN_BIN}" index --scope all --config "${TMP_CFG}" >/dev/null
-else
-  "${PYTHON_BIN}" -m dmemorymunch_mpc.cli index --scope all --config "${TMP_CFG}" >/dev/null
-fi
-
 "${OPENCLAW_BIN}" config set plugins.entries.memory-munch-tools.config.configPath "${TMP_CFG}" >/dev/null
-"${OPENCLAW_BIN}" config set plugins.entries.memory-munch-tools.config.autoIndexWatch false >/dev/null
+"${OPENCLAW_BIN}" config set plugins.entries.memory-munch-tools.config.autoIndexWatch true >/dev/null
 "${OPENCLAW_BIN}" daemon restart >/dev/null
+sleep 2
 
 QUERY="Use memory_search with query \"Ultimate Question of Life, the Universe, and Everything\". If memory results contain the answer, reply exactly 42. Otherwise reply exactly MM_VERIFY_FAIL."
 RESULT_JSON="$("${OPENCLAW_BIN}" agent --agent main --message "${QUERY}" --json)"
 echo "${RESULT_JSON}"
 
-RESULT_TEXT="$(python3 - <<'PY' "${RESULT_JSON}"
-import json, sys
-data = json.loads(sys.argv[1])
-payloads = data.get("result", {}).get("payloads", [])
-text = payloads[0].get("text", "") if payloads else ""
-print(text.strip())
-PY
-)"
+RESULT_TEXT="$(node -e '
+const data = JSON.parse(process.argv[1] || "{}");
+const payloads = data?.result?.payloads || [];
+const text = payloads.length ? String(payloads[0]?.text || "") : "";
+process.stdout.write(text.trim());
+' "${RESULT_JSON}")"
 
 if [[ "${RESULT_TEXT}" != "42" ]]; then
   echo "Isolated verification failed. Expected 42, got: ${RESULT_TEXT}" >&2

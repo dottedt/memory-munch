@@ -7,8 +7,6 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "pythonBin": { "type": "string" },
-      "bridgeScript": { "type": "string" },
       "configPath": { "type": "string" },
       "timeoutMs": { "type": "number", "minimum": 1000 },
       "autoInjectPromptContext": { "type": "boolean" },
