@@ -74,7 +74,9 @@ bash ./scripts/verify_openclaw_memory_munch.sh
 This runs an isolated one-shot verification (Hitchhiker's Guide / answer `42`)
 that does not depend on your personal memory files.
 
-Default plugin behavior after install:
+That verification is only a self-test. It does not index or modify your real memory workspace.
+
+Default plugin behavior after install (real runtime):
 
 - `autoIndexWatch=true` (plugin-managed background index watcher)
 - `autoInjectPromptContext=false`
@@ -82,7 +84,10 @@ Default plugin behavior after install:
 
 ## Indexing
 
-Indexing is automatic by default through the plugin service (`autoIndexWatch=true`).
+With `autoIndexWatch=true`, the plugin starts a watcher that:
+- runs an initial full index of your real memory files
+- then keeps the index updated as files change
+
 In normal use, you should not need manual indexing commands.
 
 Use manual indexing only for recovery/debug cases (for example, after moving
