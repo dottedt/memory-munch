@@ -60,3 +60,13 @@ dmemorymunch-mpc-admin index --scope all
 Your config file is at `~/.openclaw/workspace/dmemorymunch-mpc.toml`.
 Only edit `roots` if your memory directories live outside the default OpenClaw
 workspace.
+
+## Credits
+
+`memory-munch` was inspired by **jcodemunch-mcp** by JJ Gravelle:
+
+- https://github.com/jgravelle/jcodemunch-mcp
+- https://www.youtube.com/@jjgravelle
+
+If you do coding work with OpenClaw and want to save tokens, definitely check
+out his work.
