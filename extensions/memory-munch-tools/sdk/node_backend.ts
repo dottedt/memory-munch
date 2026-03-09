@@ -25,8 +25,11 @@ type EnvelopeErr = {
   _meta: Record<string, unknown>;
 };
 
+const SCHEMA_VERSION = "v2";
+
 const STOPWORDS = new Set([
   "a",
+  "after",
   "an",
   "and",
   "are",
@@ -34,6 +37,7 @@ const STOPWORDS = new Set([
   "asked",
   "at",
   "be",
+  "before",
   "by",
   "did",
   "do",
@@ -65,6 +69,7 @@ const STOPWORDS = new Set([
   "us",
   "was",
   "we",
+  "were",
   "what",
   "when",
   "where",
@@ -249,15 +254,22 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-function matchesAnyGlob(rel: string, globs: string[]): boolean {
+type CompiledGlob = { baseOnly: boolean; re: RegExp; compactRe: RegExp | null };
+
+function compileGlobs(globs: string[]): CompiledGlob[] {
+  return globs.map((g) => ({
+    baseOnly: !g.includes("/"),
+    re: globToRegExp(g),
+    compactRe: g.includes("/**/") ? globToRegExp(g.replace("/**/", "/")) : null,
+  }));
+}
+
+function matchesAnyGlob(rel: string, _globs: string[], compiled: CompiledGlob[]): boolean {
   const base = path.basename(rel);
-  for (const g of globs) {
-    if (!g.includes("/") && globToRegExp(g).test(base)) return true;
-    if (globToRegExp(g).test(rel)) return true;
-    if (g.includes("/**/")) {
-      const compact = g.replace("/**/", "/");
-      if (globToRegExp(compact).test(rel)) return true;
-    }
+  for (const { baseOnly, re, compactRe } of compiled) {
+    if (baseOnly && re.test(base)) return true;
+    if (re.test(rel)) return true;
+    if (compactRe && compactRe.test(rel)) return true;
   }
   return false;
 }
@@ -575,10 +587,15 @@ export class NodeMemoryMunchBackend {
   private readonly settings: NodeBackendSettings;
   private readonly dbPath: string;
   private readonly db: DatabaseSync;
+  private readonly _includeRegexps: CompiledGlob[];
+  private readonly _excludeRegexps: CompiledGlob[];
+  private _rebuildTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly configPath: string) {
     this.settings = loadNodeBackendSettings(configPath);
     this.dbPath = resolveDbPath(configPath, this.settings.dbPath);
+    this._includeRegexps = compileGlobs(this.settings.includeGlobs);
+    this._excludeRegexps = compileGlobs(this.settings.excludeGlobs);
     fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
     this.db = new DatabaseSync(this.dbPath);
     this.db.exec("PRAGMA foreign_keys = ON");
@@ -593,11 +610,44 @@ export class NodeMemoryMunchBackend {
   }
 
   close(): void {
+    if (this._rebuildTimer) {
+      clearTimeout(this._rebuildTimer);
+      this._rebuildTimer = null;
+      this.rebuildLookupPaths();
+      this.rebuildTerms();
+      this.rebuildFacts();
+    }
     this.db.close();
   }
 
   getDbPath(): string {
     return this.dbPath;
+  }
+
+  private beginTx(): void {
+    this.db.exec("BEGIN IMMEDIATE");
+  }
+
+  private commitTx(): void {
+    this.db.exec("COMMIT");
+  }
+
+  private rollbackTx(): void {
+    this.db.exec("ROLLBACK");
+  }
+
+  private inTransaction<T>(fn: () => T): T {
+    this.beginTx();
+    try {
+      const result = fn();
+      this.commitTx();
+      return result;
+    } catch (e) {
+      try {
+        this.rollbackTx();
+      } catch {}
+      throw e;
+    }
   }
 
   private ensureColumn(table: "memory_chunks", column: string, definition: string): void {
@@ -650,7 +700,6 @@ export class NodeMemoryMunchBackend {
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_parent_path ON memory_chunks(parent_path);
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_lookup_order ON memory_chunks(lookup_path, chunk_order);
       CREATE INDEX IF NOT EXISTS idx_memory_chunks_source_file ON memory_chunks(source_file);
-      CREATE INDEX IF NOT EXISTS idx_memory_chunks_source ON memory_chunks(source);
 
       CREATE TABLE IF NOT EXISTS memory_lookup_paths (
         lookup_path TEXT PRIMARY KEY,
@@ -721,8 +770,18 @@ export class NodeMemoryMunchBackend {
       DROP TRIGGER IF EXISTS memory_chunks_ai;
       DROP TRIGGER IF EXISTS memory_chunks_ad;
       DROP TRIGGER IF EXISTS memory_chunks_au;
-      DROP TABLE IF EXISTS memory_fts;
     `);
+
+    const versionRow = this.db
+      .prepare("SELECT name FROM _schema_migrations WHERE name = ?")
+      .get(SCHEMA_VERSION) as { name: string } | undefined;
+    const needsFtsRebuild = !versionRow;
+
+    if (needsFtsRebuild) {
+      this.db.exec(`
+        DROP TABLE IF EXISTS memory_fts;
+      `);
+    }
 
     this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
@@ -731,7 +790,19 @@ export class NodeMemoryMunchBackend {
         content='memory_chunks',
         content_rowid='chunk_id'
       );
-      INSERT INTO memory_fts(memory_fts) VALUES ('rebuild');
+    `);
+
+    if (needsFtsRebuild) {
+      this.db.exec(`INSERT INTO memory_fts(memory_fts) VALUES ('rebuild')`);
+      this.db
+        .prepare(
+          `INSERT INTO _schema_migrations(name, applied_at) VALUES (?, ?)
+           ON CONFLICT(name) DO UPDATE SET applied_at=excluded.applied_at`,
+        )
+        .run(SCHEMA_VERSION, utcIso());
+    }
+
+    this.db.exec(`
       CREATE TRIGGER IF NOT EXISTS memory_chunks_ai AFTER INSERT ON memory_chunks BEGIN
         INSERT INTO memory_fts(rowid, content, lookup_path)
         VALUES (new.chunk_id, new.content, new.lookup_path);
@@ -749,6 +820,7 @@ export class NodeMemoryMunchBackend {
     `);
 
     this.ensureColumn("memory_chunks", "source", "TEXT NOT NULL DEFAULT 'file'");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_memory_chunks_source ON memory_chunks(source)");
   }
 
   async discoverFiles(cwd = process.cwd()): Promise<DiscoveredFile[]> {
@@ -780,8 +852,8 @@ export class NodeMemoryMunchBackend {
 
         const rel = normalizeRelPath(candidate, cwd);
         const relFromRoot = path.relative(rootAbs, candidate).replace(/\\/g, "/");
-        if (this.settings.includeGlobs.length > 0 && !matchesAnyGlob(relFromRoot, this.settings.includeGlobs)) continue;
-        if (matchesAnyGlob(relFromRoot, this.settings.excludeGlobs)) continue;
+        if (this.settings.includeGlobs.length > 0 && !matchesAnyGlob(relFromRoot, this.settings.includeGlobs, this._includeRegexps)) continue;
+        if (matchesAnyGlob(relFromRoot, this.settings.excludeGlobs, this._excludeRegexps)) continue;
 
         const key = path.resolve(candidate);
         if (seen.has(key)) continue;
@@ -794,10 +866,12 @@ export class NodeMemoryMunchBackend {
     return files;
   }
 
-  private hashFile(filePath: string): string {
+  private async hashFile(filePath: string): Promise<string> {
     const h = createHash("sha256");
-    const data = fs.readFileSync(filePath);
-    h.update(data);
+    const stream = fs.createReadStream(filePath);
+    for await (const chunk of stream) {
+      h.update(chunk as Buffer);
+    }
     return h.digest("hex");
   }
 
@@ -847,8 +921,8 @@ export class NodeMemoryMunchBackend {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
-    const tx = this.db.transaction((records: ChunkRecord[]) => {
-      for (const c of records) {
+    this.inTransaction(() => {
+      for (const c of chunks) {
         stmt.run(
           c.lookupPath,
           c.parentPath,
@@ -870,7 +944,6 @@ export class NodeMemoryMunchBackend {
         )
         .run(sourceFile);
     });
-    tx(chunks);
     return { upserted: chunks.length, deleted };
   }
 
@@ -903,7 +976,7 @@ export class NodeMemoryMunchBackend {
        ON CONFLICT(lookup_path) DO NOTHING`,
     );
 
-    const tx = this.db.transaction(() => {
+    this.inTransaction(() => {
       for (const r of rows) {
         const p = String(r.lookup_path);
         insert.run(p, r.parent_path ?? null, p.split(".").length, Number(r.chunk_count || 0));
@@ -927,7 +1000,6 @@ export class NodeMemoryMunchBackend {
         )
       `);
     });
-    tx();
   }
 
   private rebuildTerms(): void {
@@ -969,7 +1041,7 @@ export class NodeMemoryMunchBackend {
         .slice(0, 120)
         .forEach(([t, c]) => add(t, Math.min(0.65, 0.2 + c * 0.07)));
 
-      const labelMatches = content.match(/(?m)^\s*[-*]\s*([^:\n]{2,48})\s*:/g) || [];
+      const labelMatches = content.match(/^\s*[-*]\s*([^:\n]{2,48})\s*:/gm) || [];
       for (const raw of labelMatches) {
         const m = raw.match(/[-*]\s*([^:\n]{2,48})\s*:/);
         if (m) add(safeTerm(m[1] || ""), 1.1);
@@ -992,10 +1064,9 @@ export class NodeMemoryMunchBackend {
 
     batch.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
     const insert = this.db.prepare("INSERT INTO memory_terms(term, lookup_path, weight) VALUES (?, ?, ?)");
-    const tx = this.db.transaction((rows0: Array<[string, string, number]>) => {
-      for (const row of rows0) insert.run(...row);
+    this.inTransaction(() => {
+      for (const row of batch) insert.run(...row);
     });
-    tx(batch);
 
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_memory_terms_term ON memory_terms(term)");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_memory_terms_lookup_path ON memory_terms(lookup_path)");
@@ -1016,7 +1087,7 @@ export class NodeMemoryMunchBackend {
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
 
-    const tx = this.db.transaction(() => {
+    this.inTransaction(() => {
       for (const r of rows) {
         const chunkId = Number(r.chunk_id);
         const lookupPath = String(r.lookup_path);
@@ -1039,10 +1110,9 @@ export class NodeMemoryMunchBackend {
         }
       }
     });
-    tx();
   }
 
-  async index(scope: "all" | "changed" = "changed", cwd = process.cwd()): Promise<Record<string, unknown>> {
+  async index(scope: "all" | "changed" = "changed", cwd = process.cwd()): Promise<EnvelopeOk | EnvelopeErr> {
     const started = Date.now();
     const scanned = await this.discoverFiles(cwd);
     const scannedSet = new Set(scanned.map((f) => f.relPath));
@@ -1066,7 +1136,7 @@ export class NodeMemoryMunchBackend {
             ? stRec.mtimeNs
             : Math.trunc(st.mtimeMs * 1_000_000);
       const mtimeMatch = prev && Number(prev.mtime_ns || 0) === mtimeNs && Number(prev.size_bytes || 0) === st.size;
-      const hash = scope === "all" || !mtimeMatch ? this.hashFile(f.absPath) : String(prev?.file_hash || "");
+      const hash = scope === "all" || !mtimeMatch ? await this.hashFile(f.absPath) : String(prev?.file_hash || "");
       const isChanged = scope === "all" || !prev || String(prev.file_hash || "") !== hash || !mtimeMatch;
       if (isChanged) changed.push(f);
 
@@ -1109,14 +1179,16 @@ export class NodeMemoryMunchBackend {
       )
       .run(new Date(started).toISOString(), new Date(ended).toISOString(), scope, scanned.length, changed.length, chunksUpserted, chunksDeleted, "ok", null);
 
-    return {
-      indexed_files: changed.length,
-      scanned_files: scanned.length,
-      indexed_chunks: chunksUpserted,
-      deleted_chunks: chunksDeleted,
-      duration_ms: ended - started,
-      scope,
-    };
+    return ok(
+      {
+        indexed_files: changed.length,
+        scanned_files: scanned.length,
+        indexed_chunks: chunksUpserted,
+        deleted_chunks: chunksDeleted,
+        scope,
+      },
+      started,
+    );
   }
 
   saveDirectChunk(params: {
@@ -1168,7 +1240,7 @@ export class NodeMemoryMunchBackend {
       const endLine = Math.max(1, lines.length);
       const nowIso = utcIso();
 
-      const tx = this.db.transaction(() => {
+      this.inTransaction(() => {
         if (replace) {
           this.db.prepare("DELETE FROM memory_chunks WHERE lookup_path = ?").run(lookupPath);
         }
@@ -1208,11 +1280,14 @@ export class NodeMemoryMunchBackend {
           )
           .run(chunkId, lookupPath, heading, sourceFile, contentHash, source);
       });
-      tx();
 
-      this.rebuildLookupPaths();
-      this.rebuildTerms();
-      this.rebuildFacts();
+      if (this._rebuildTimer) clearTimeout(this._rebuildTimer);
+      this._rebuildTimer = setTimeout(() => {
+        this._rebuildTimer = null;
+        this.rebuildLookupPaths();
+        this.rebuildTerms();
+        this.rebuildFacts();
+      }, 500);
 
       return ok(
         {
@@ -1275,6 +1350,30 @@ export class NodeMemoryMunchBackend {
     return [...outbound, ...inbound];
   }
 
+  private getRelatedChunksBatch(lookupPaths: string[]): Array<Record<string, unknown>> {
+    if (!lookupPaths.length) return [];
+    const paths = lookupPaths.map((p) => coerceLookupPath(p)).filter(Boolean);
+    if (!paths.length) return [];
+    const placeholders = paths.map(() => "?").join(", ");
+    return this.db
+      .prepare(
+        `SELECT c.*, i.access_count, i.last_accessed, r.predicate AS via_relation
+         FROM memory_relations r
+         JOIN memory_chunks c ON c.lookup_path = r.object
+         LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
+         WHERE r.subject IN (${placeholders})
+         UNION ALL
+         SELECT c.*, i.access_count, i.last_accessed, r.predicate AS via_relation
+         FROM memory_relations r
+         JOIN memory_chunks c ON c.lookup_path = r.subject
+         LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
+         WHERE r.object IN (${placeholders})
+         ORDER BY c.chunk_order ASC
+         LIMIT 24`,
+      )
+      .all(...paths, ...paths) as Array<Record<string, unknown>>;
+  }
+
   private recordAccess(chunkIds: number[]): void {
     if (!chunkIds.length) return;
     const stmt = this.db.prepare(
@@ -1284,10 +1383,9 @@ export class NodeMemoryMunchBackend {
        WHERE chunk_id = ?`,
     );
     const now = utcIso();
-    const tx = this.db.transaction((ids: number[]) => {
-      for (const id of ids) stmt.run(now, id);
+    this.inTransaction(() => {
+      for (const id of chunkIds) stmt.run(now, id);
     });
-    tx(chunkIds);
   }
 
   pathRoot(): EnvelopeOk | EnvelopeErr {
@@ -1596,24 +1694,26 @@ export class NodeMemoryMunchBackend {
       const relationAnchors = [...hitsById.values()]
         .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
         .slice(0, Math.max(1, Math.min(12, limit * 2)));
+      const anchorPaths = relationAnchors.map((a) => String(a.lookup_path || "")).filter(Boolean);
+      const anchorScoreMap = new Map<string, number>();
       for (const anchor of relationAnchors) {
-        const anchorPath = String(anchor.lookup_path || "");
-        if (!anchorPath) continue;
-        const anchorScore = Number(anchor.score || 0);
-        for (const row of this.getRelatedChunks(anchorPath)) {
-          const relationScore = Math.max(0.3, anchorScore * 0.7);
-          const h = rowToHit(row, relationScore, this.settings.snippetChars);
-          const relationPred = String(row.via_relation || "").trim();
-          if (relationPred) h.via_relation = relationPred;
-          const id = Number(h.chunk_id || 0);
-          const prev = hitsById.get(id);
-          if (!prev) {
-            hitsById.set(id, h);
-            relationAdded += 1;
-          } else if (relationScore > Number(prev.score || 0)) {
-            const merged = { ...prev, ...h, score: Number(relationScore.toFixed(4)) };
-            hitsById.set(id, merged);
-          }
+        const ap = String(anchor.lookup_path || "");
+        if (ap) anchorScoreMap.set(ap, Number(anchor.score || 0));
+      }
+      const maxAnchorScore = anchorPaths.reduce((m, p) => Math.max(m, anchorScoreMap.get(p) ?? 0), 0);
+      for (const row of this.getRelatedChunksBatch(anchorPaths)) {
+        const relationScore = Math.max(0.3, maxAnchorScore * 0.7);
+        const h = rowToHit(row, relationScore, this.settings.snippetChars);
+        const relationPred = String(row.via_relation || "").trim();
+        if (relationPred) h.via_relation = relationPred;
+        const id = Number(h.chunk_id || 0);
+        const prev = hitsById.get(id);
+        if (!prev) {
+          hitsById.set(id, h);
+          relationAdded += 1;
+        } else if (relationScore > Number(prev.score || 0)) {
+          const merged = { ...prev, ...h, score: Number(relationScore.toFixed(4)) };
+          hitsById.set(id, merged);
         }
       }
       if (relationAdded > 0) trace.push({ stage: "relation_expand", detail: `added=${relationAdded}` });

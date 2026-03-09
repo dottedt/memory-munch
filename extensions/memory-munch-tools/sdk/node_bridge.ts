@@ -8,6 +8,7 @@ function readFlag(args: string[], name: string): string | undefined {
 
 export class NodeBridge {
   private readonly backend: NodeMemoryMunchBackend;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(configPath: string) {
     this.backend = new NodeMemoryMunchBackend(configPath);
@@ -17,7 +18,7 @@ export class NodeBridge {
     this.backend.close();
   }
 
-  async call(args: string[]): Promise<unknown> {
+  private async callInternal(args: string[]): Promise<unknown> {
     const op = (args[0] || "").trim();
     switch (op) {
       case "path_root":
@@ -68,7 +69,7 @@ export class NodeBridge {
         return this.backend.savings();
       case "index": {
         const scope = readFlag(args, "--scope");
-        return { ok: true, api_version: "v2", data: await this.backend.index(scope === "all" ? "all" : "changed"), error: null };
+        return this.backend.index(scope === "all" ? "all" : "changed");
       }
       default:
         return {
@@ -80,7 +81,15 @@ export class NodeBridge {
     }
   }
 
-  async reindex(scope: "all" | "changed" = "changed"): Promise<Record<string, unknown>> {
-    return await this.backend.index(scope);
+  async call(args: string[]): Promise<unknown> {
+    // Serialize access to the single DatabaseSync connection to avoid
+    // overlapping operations (watch indexing vs tool calls).
+    const run = this.queue.then(() => this.callInternal(args));
+    this.queue = run.catch(() => undefined);
+    return await run;
+  }
+
+  async reindex(scope: "all" | "changed" = "changed") {
+    return this.backend.index(scope);
   }
 }

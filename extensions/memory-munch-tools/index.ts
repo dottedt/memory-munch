@@ -1,3 +1,4 @@
+import fsp from "node:fs/promises";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { MemoryMunchClient, resolvePluginCfg } from "./sdk/client";
 import { readMemoryFileSnippet } from "./sdk/files";
@@ -72,7 +73,53 @@ export default function register(api: OpenClawPluginApi) {
 
   if (cfg.autoFlushOnCompaction) {
     api.on("before_compaction", async (event) => {
-      const text = String((event as { context?: string })?.context ?? "");
+      type CompactionEvent = {
+        messageCount?: number;
+        compactingCount?: number;
+        tokenCount?: number;
+        messages?: unknown[];
+        sessionFile?: string;
+      };
+      const ev = event as CompactionEvent;
+      let text = "";
+
+      if (Array.isArray(ev.messages) && ev.messages.length > 0) {
+        text = ev.messages
+          .map((m) => {
+            const msg = m as { role?: unknown; content?: unknown };
+            const role = String(msg.role ?? "unknown");
+            const content =
+              typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content ?? "");
+            return `${role}: ${content}`;
+          })
+          .join("\n");
+      } else if (typeof ev.sessionFile === "string" && ev.sessionFile) {
+        try {
+          const lines = (await fsp.readFile(ev.sessionFile, "utf-8")).split("\n");
+          const parts: string[] = [];
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const obj = JSON.parse(trimmed) as { role?: unknown; content?: unknown };
+              const role = String(obj.role ?? "unknown");
+              const content =
+                typeof obj.content === "string"
+                  ? obj.content
+                  : JSON.stringify(obj.content ?? "");
+              parts.push(`${role}: ${content}`);
+            } catch {
+              // skip malformed lines
+            }
+          }
+          text = parts.join("\n");
+        } catch {
+          return;
+        }
+      }
+
       if (text.length < 100) return;
       try {
         await raw.memorySave({
