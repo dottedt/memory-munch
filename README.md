@@ -23,6 +23,12 @@ When Memory-Munch has no confident hit, it falls back to OpenClaw's native vecto
 
 If you use OpenClaw's memory and find it dumping too much, or too little, into context, this is for you.
 
+Why this is better than standard OpenClaw memory search (brief):
+- Path-first retrieval gives more deterministic hits when your memory is structured.
+- Hard token caps avoid context blowups from large memory pulls.
+- Local indexed lookup keeps answers fast and predictable.
+- Native OpenClaw vector memory still acts as fallback when Memory-Munch has no confident hit.
+
 ## License
 
 Free for personal and non-commercial use.
