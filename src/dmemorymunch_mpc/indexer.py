@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import fnmatch
 import hashlib
-import re
 import unicodedata
 from pathlib import Path
 
@@ -52,8 +51,8 @@ def discover_files(settings: Settings, cwd: Path) -> list[DiscoveredFile]:
         if not root_abs.exists():
             continue
 
-        # OpenClaw-compatible defaults: root MEMORY.md / memory.md + memory/**/*.md.
-        defaults: list[Path] = [root_abs / "MEMORY.md", root_abs / "memory.md"]
+        # OpenClaw defaults: root MEMORY.md + memory/**/*.md.
+        defaults: list[Path] = [root_abs / "MEMORY.md"]
         memory_dir = root_abs / "memory"
         if memory_dir.exists() and memory_dir.is_dir():
             defaults.extend(memory_dir.rglob("*.md"))
@@ -121,8 +120,7 @@ _UNICODE_REPLACEMENTS = {
 def sqlite_safe_text(text: str) -> str:
     for src, dst in _UNICODE_REPLACEMENTS.items():
         text = text.replace(src, dst)
-    text = unicodedata.normalize("NFKD", text)
-    return text.encode("ascii", "ignore").decode("ascii")
+    return unicodedata.normalize("NFKD", text)
 
 
 def _chunk_blocks(
@@ -269,7 +267,6 @@ def _chunk_blocks(
 
     flush_pending()
     return out
-
 
 
 def run_index(db: Database, settings: Settings, scope: str = "changed", cwd: Path | None = None) -> dict:

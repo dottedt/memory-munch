@@ -9,57 +9,20 @@ from typing import Iterable
 from .config import Settings
 from .db import Database
 from .models import RetrievalTraceStep
+from ._stopwords import STOPWORDS
 
-STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "its",
-    "me",
-    "my",
-    "of",
-    "on",
-    "or",
-    "our",
-    "that",
-    "the",
-    "their",
-    "them",
-    "they",
-    "this",
-    "to",
-    "up",
-    "us",
-    "was",
-    "we",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
-    "you",
-    "your",
-    "did",
-    "does",
-    "do",
-    "give",
-    "given",
-    "asked",
-}
+# Scoring constants for text_search
+_FACT_HIT_SCORE = 3.0           # score for fact-index hits (highest priority)
+_BM25_SCALE = 2.0               # BM25 normalization scale (sigmoid numerator)
+_OVERLAP_WEIGHT = 1.25          # max content-overlap contribution to score
+_SIBLING_INHERIT_RATIO = 0.75   # siblings inherit this fraction of anchor score
+_SCORE_FLOOR = 0.3              # minimum score for term-index and sibling hits
+_TERM_BOOST_SCALE = 0.3         # term_weight multiplier for score boost
+_TERM_BOOST_MAX = 0.5           # maximum term_weight bonus
+_TOP_HITS_FOR_EXPAND = 5        # how many top hits to consider for sibling expansion
+_SIBLINGS_PER_PARENT = 8        # max siblings to fetch per parent during expansion
+_ACTIVATION_SCALE = 0.1         # scale factor applied to raw activation before capping
+_ACTIVATION_WEIGHT = 0.5        # max activation bonus added to FTS and term-index scores
 
 FACT_PREDICATE_SYNONYMS: dict[str, tuple[str, ...]] = {
     "phone": ("phone", "telephone", "mobile", "cell", "number"),
@@ -114,8 +77,8 @@ def _overlap(content: str, terms: list[str]) -> float:
 
 
 def _activation(row) -> float:
+    """Recency + frequency score: 0 for never-accessed, higher for frequent recent hits."""
     access_count = row["access_count"] if row["access_count"] is not None else 0
-    confidence = row["confidence"] if row["confidence"] is not None else 0.5
     last = row["last_accessed"]
     recency = 0.0
     if last:
@@ -125,7 +88,7 @@ def _activation(row) -> float:
             recency = 1.0 / (days + 1.0)
         except Exception:
             recency = 0.0
-    return recency + math.log1p(max(0, access_count)) + float(confidence)
+    return recency + math.log1p(max(0, access_count))
 
 
 def _escape_fts_term(term: str) -> str:
@@ -268,7 +231,7 @@ def text_search(
             )
         )
         for r in fact_rows:
-            hit = _row_to_hit(r, 3.0, settings.snippet_chars)
+            hit = _row_to_hit(r, _FACT_HIT_SCORE, settings.snippet_chars)
             cid = hit["chunk_id"]
             if cid not in hits_by_id or hit["score"] > hits_by_id[cid]["score"]:
                 hits_by_id[cid] = hit
@@ -282,7 +245,11 @@ def text_search(
         trace.append(RetrievalTraceStep(stage=label, detail=f"query={fts_query}; hits={len(rows)}"))
         for r in rows:
             bm25 = max(0.0, -float(r["rank"]))
-            score = 2.0 * bm25 / (1.0 + bm25) + 1.25 * _overlap(str(r["content"] or ""), sig_terms)
+            score = (
+                _BM25_SCALE * bm25 / (1.0 + bm25)
+                + _OVERLAP_WEIGHT * _overlap(str(r["content"] or ""), sig_terms)
+                + min(_ACTIVATION_WEIGHT, _activation(r) * _ACTIVATION_SCALE)
+            )
             hit = _row_to_hit(r, score, settings.snippet_chars)
             cid = hit["chunk_id"]
             if cid not in hits_by_id or hit["score"] > hits_by_id[cid]["score"]:
@@ -300,8 +267,8 @@ def text_search(
             rows = db.chunks_for_term(term, max(8, limit * 2))
             trace.append(RetrievalTraceStep(stage="term_index", detail=f"term={term}; hits={len(rows)}"))
             for r in rows:
-                boost = min(0.5, float(r["term_weight"]) * 0.3) if r["term_weight"] is not None else 0.0
-                score = 0.3 + boost
+                boost = min(_TERM_BOOST_MAX, float(r["term_weight"]) * _TERM_BOOST_SCALE) if r["term_weight"] is not None else 0.0
+                score = _SCORE_FLOOR + boost + min(_ACTIVATION_WEIGHT, _activation(r) * _ACTIVATION_SCALE)
                 hit = _row_to_hit(r, score, settings.snippet_chars)
                 cid = hit["chunk_id"]
                 if cid not in hits_by_id:
@@ -319,7 +286,7 @@ def text_search(
     if hits:
         parent_info: list[tuple[str, float]] = []
         seen_parents: set[str] = set()
-        for h in sorted(hits, key=lambda x: -x["score"])[:5]:
+        for h in sorted(hits, key=lambda x: -x["score"])[:_TOP_HITS_FOR_EXPAND]:
             lp = h.get("lookup_path") or ""
             parent = ".".join(str(lp).split(".")[:-1]) if lp else ""
             if parent and parent not in seen_parents:
@@ -327,8 +294,8 @@ def text_search(
                 parent_info.append((parent, h["score"]))
         expanded = 0
         for parent, anchor_score in parent_info:
-            for row in db.chunks_for_parent(parent, 8):
-                sibling_score = max(0.3, anchor_score * 0.75)
+            for row in db.chunks_for_parent(parent, _SIBLINGS_PER_PARENT):
+                sibling_score = max(_SCORE_FLOOR, anchor_score * _SIBLING_INHERIT_RATIO)
                 hit = _row_to_hit(row, sibling_score, settings.snippet_chars)
                 cid = hit["chunk_id"]
                 if cid not in hits_by_id:

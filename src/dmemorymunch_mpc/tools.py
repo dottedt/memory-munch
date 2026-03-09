@@ -6,7 +6,6 @@ import time
 
 from .config import Settings
 from .db import Database
-from .indexer import run_index
 from .retrieval import chunk_fetch, path_children, path_lookup, path_root, text_search
 from .token_tracker import bytes_to_tokens, cost_avoided, estimate_savings, record_savings
 
@@ -14,7 +13,7 @@ from .token_tracker import bytes_to_tokens, cost_avoided, estimate_savings, reco
 API_VERSION = "v2"
 
 
-def _resolve_file_path(file_path: str) -> Path | None:
+def _resolve_file_path(file_path: str) -> Path:
     if file_path.startswith("home/"):
         return (Path.home() / file_path[len("home/") :]).resolve()
     return (Path.cwd() / file_path).resolve()
@@ -142,24 +141,6 @@ def memory_munch_chunk_fetch_tool(db: Database, chunk_id: int) -> dict:
         return ok(chunk_fetch(db, chunk_id), started=started)
     except Exception as e:
         return err("DB_ERROR", "Failed chunk fetch", {"reason": str(e)}, started=started)
-
-
-def reindex_tool(db: Database, settings: Settings, scope: str = "changed") -> dict:
-    started = time.perf_counter()
-    if scope not in {"all", "changed"}:
-        return err("INVALID_SCOPE", "scope must be all|changed", started=started)
-    try:
-        return ok(run_index(db, settings, scope=scope), started=started)
-    except Exception as e:
-        return err("INDEX_ERROR", "Reindex failed", {"reason": str(e)}, started=started)
-
-
-def stats_tool(db: Database, namespace_prefix: str | None = None) -> dict:
-    started = time.perf_counter()
-    try:
-        return ok(db.stats(namespace_prefix), started=started)
-    except Exception as e:
-        return err("DB_ERROR", "Stats failed", {"reason": str(e)}, started=started)
 
 
 def doctor_tool(db: Database) -> dict:

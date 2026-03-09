@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 _SAVINGS_FILE = "_savings.json"
 _BYTES_PER_TOKEN = 4
@@ -16,7 +15,7 @@ PRICING = {
 }
 
 
-def _savings_path(base_path: Optional[str] = None) -> Path:
+def _savings_path(base_path: str | None = None) -> Path:
     if base_path:
         root = Path(base_path)
     elif os.environ.get("DMEMORYMUNCH_SAVINGS_PATH"):
@@ -34,7 +33,7 @@ def _savings_path(base_path: Optional[str] = None) -> Path:
     return root / _SAVINGS_FILE
 
 
-def record_savings(tokens_saved: int, base_path: Optional[str] = None) -> int:
+def record_savings(tokens_saved: int, base_path: str | None = None) -> int:
     try:
         path = _savings_path(base_path)
     except Exception:
@@ -56,7 +55,7 @@ def record_savings(tokens_saved: int, base_path: Optional[str] = None) -> int:
     return total
 
 
-def get_total_saved(base_path: Optional[str] = None) -> int:
+def get_total_saved(base_path: str | None = None) -> int:
     try:
         path = _savings_path(base_path)
     except Exception:

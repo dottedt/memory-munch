@@ -35,6 +35,8 @@ Memory-Munch is considered "no confident hit" when either condition is true:
 - Hard cap: `1200`.
 - Path-based lookup preferred over free-text search.
 - Do not inject full markdown files.
+- Keep plugin `autoInjectPromptContext=false` by default. Enable only if your model repeatedly fails to call memory tools.
+- Keep plugin `exposeRawTools=false` by default so model-facing calls use wrapper tools instead of low-level `memory_munch_*`.
 
 ## Minimal Fallback Flow
 1. Try path navigation/lookup (`path_root` -> `path_children` -> `path_lookup`).
@@ -70,4 +72,3 @@ Track these metrics per query:
 Temporary exec bridge artifacts were removed from `~/.openclaw/workspace`:
 - removed `mm-tool`
 - removed "Memory-Munch Bridge (Exec)" section from workspace `AGENTS.md`
-

@@ -7,54 +7,10 @@ import sqlite3
 from pathlib import Path
 
 from .models import ChunkRecord, IndexStats
+from ._stopwords import STOPWORDS as TERM_STOPWORDS
 
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-
-TERM_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "how",
-    "i",
-    "in",
-    "is",
-    "it",
-    "its",
-    "me",
-    "my",
-    "of",
-    "on",
-    "or",
-    "our",
-    "that",
-    "the",
-    "their",
-    "them",
-    "they",
-    "this",
-    "to",
-    "up",
-    "us",
-    "was",
-    "we",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
-    "you",
-    "your",
-}
 
 
 def _tokenize_terms(text: str) -> list[str]:
@@ -181,8 +137,8 @@ class Database:
         )
         self.conn.execute(
             """
-            INSERT OR IGNORE INTO memory_index(chunk_id, access_count, last_accessed, confidence)
-            SELECT chunk_id, 0, NULL, 0.5 FROM memory_chunks WHERE source_file = ?
+            INSERT OR IGNORE INTO memory_index(chunk_id, access_count, last_accessed)
+            SELECT chunk_id, 0, NULL FROM memory_chunks WHERE source_file = ?
             """,
             (source_file,),
         )
@@ -244,7 +200,6 @@ class Database:
               SELECT COUNT(*) FROM memory_lookup_paths c
               WHERE c.parent_path = memory_lookup_paths.lookup_path
             )
-            WHERE 1=1
             """
         )
         self.conn.commit()
@@ -411,7 +366,7 @@ class Database:
     def chunks_for_path(self, path: str) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence
+            SELECT c.*, i.access_count, i.last_accessed
             FROM memory_chunks c
             LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
             WHERE c.lookup_path = ?
@@ -424,7 +379,7 @@ class Database:
         like = f"{prefix}.%"
         return self.conn.execute(
             """
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence
+            SELECT c.*, i.access_count, i.last_accessed
             FROM memory_chunks c
             LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
             WHERE c.lookup_path LIKE ?
@@ -437,7 +392,7 @@ class Database:
     def chunks_for_parent(self, parent_path: str, limit: int) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence
+            SELECT c.*, i.access_count, i.last_accessed
             FROM memory_chunks c
             LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
             WHERE c.parent_path = ?
@@ -450,7 +405,7 @@ class Database:
     def chunks_for_term(self, term: str, limit: int) -> list[sqlite3.Row]:
         return self.conn.execute(
             """
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence,
+            SELECT c.*, i.access_count, i.last_accessed,
                    t.term AS matched_term, t.weight AS term_weight
             FROM memory_terms t
             JOIN memory_chunks c ON c.lookup_path = t.lookup_path
@@ -487,7 +442,7 @@ class Database:
 
         return self.conn.execute(
             f"""
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence,
+            SELECT c.*, i.access_count, i.last_accessed,
                    f.predicate AS fact_predicate, f.subject AS fact_subject, f.object AS fact_object, f.weight AS fact_weight
             FROM memory_facts f
             JOIN memory_chunks c ON c.chunk_id = f.chunk_id
@@ -508,7 +463,7 @@ class Database:
         params.append(limit)
         return self.conn.execute(
             f"""
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence,
+            SELECT c.*, i.access_count, i.last_accessed,
                    bm25(memory_fts) AS rank,
                    snippet(memory_fts, 0, '', '', ' ... ', 64) AS fts_snippet
             FROM memory_fts f
@@ -525,7 +480,7 @@ class Database:
     def fetch_chunk(self, chunk_id: int) -> sqlite3.Row | None:
         return self.conn.execute(
             """
-            SELECT c.*, i.access_count, i.last_accessed, i.confidence
+            SELECT c.*, i.access_count, i.last_accessed
             FROM memory_chunks c
             LEFT JOIN memory_index i ON i.chunk_id = c.chunk_id
             WHERE c.chunk_id = ?

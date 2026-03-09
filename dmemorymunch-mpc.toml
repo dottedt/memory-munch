@@ -1,6 +1,6 @@
 db_path = ".memorymunch/memory.db"
-roots = ["."]
-include_globs = ["MEMORY.md", "memory.md", "memory/**/*.md"]
+roots = ["~/.openclaw/workspace"]
+include_globs = ["MEMORY.md", "memory/**/*.md"]
 exclude_globs = [
   ".git/**",
   ".pytest_cache/**",

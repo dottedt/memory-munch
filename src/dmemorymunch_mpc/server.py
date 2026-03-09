@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Optional
 
 from mcp.server import Server
 from mcp.types import TextContent, Tool
@@ -153,7 +152,7 @@ async def run_server(config_path: str | None = None, db_path: str | None = None)
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="dmemorymunch-mpc",
         description="Run the dmemorymunch-mpc MCP stdio server.",

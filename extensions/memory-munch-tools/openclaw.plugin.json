@@ -10,7 +10,11 @@
       "pythonBin": { "type": "string" },
       "bridgeScript": { "type": "string" },
       "configPath": { "type": "string" },
-      "timeoutMs": { "type": "number", "minimum": 1000 }
+      "timeoutMs": { "type": "number", "minimum": 1000 },
+      "autoInjectPromptContext": { "type": "boolean" },
+      "exposeRawTools": { "type": "boolean" },
+      "autoIndexWatch": { "type": "boolean" },
+      "autoIndexWatchIntervalSec": { "type": "number", "minimum": 0.5 }
     }
   }
 }

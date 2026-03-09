@@ -10,7 +10,6 @@ def test_index_and_retrieval_flow(tmp_path: Path):
     (tmp_path / "memory").mkdir()
     md = tmp_path / "memory" / "guide.md"
     md.write_text("# Agents\n## Tools\n### Memory\nPhone number is 555-0100\n", encoding="utf-8")
-    (tmp_path / "memory.md").write_text("# Root alt\nFallback root memory file\n", encoding="utf-8")
 
     db_path = tmp_path / ".memorymunch" / "memory.db"
     db_path.parent.mkdir()
@@ -18,7 +17,7 @@ def test_index_and_retrieval_flow(tmp_path: Path):
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
     )
     db = Database(str(db_path))
@@ -43,9 +42,6 @@ def test_index_and_retrieval_flow(tmp_path: Path):
     fetched = chunk_fetch(db, cid)
     assert fetched["item"]
     assert "555-0100" in fetched["item"]["text"]
-    alt_lookup = path_lookup(db, settings, path="memory.root_alt", max_tokens=1200, limit=10)
-    assert alt_lookup["items"]
-    assert alt_lookup["items"][0]["path"] == "memory.md"
     db.close()
 
 
@@ -78,7 +74,7 @@ def test_text_search_handles_question_terms_spanning_sibling_chunks(tmp_path: Pa
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
         snippet_chars=360,
     )
@@ -126,7 +122,7 @@ def test_text_search_uses_global_term_index_for_compact_name_query(tmp_path: Pat
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
     )
     db = Database(str(db_path))
@@ -172,7 +168,7 @@ def test_text_search_uses_fact_index_for_person_attribute_questions(tmp_path: Pa
     settings = Settings(
         db_path=str(db_path),
         roots=["."],
-        include_globs=["MEMORY.md", "memory.md", "memory/**/*.md"],
+        include_globs=["MEMORY.md", "memory/**/*.md"],
         exclude_globs=[],
         snippet_chars=360,
     )
