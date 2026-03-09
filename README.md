@@ -149,3 +149,34 @@ Optional: disable automatic watcher
 openclaw config set plugins.entries.memory-munch-tools.config.autoIndexWatch false
 openclaw daemon restart
 ```
+
+## Publish (npm + OpenClaw Community Listing)
+
+### Publish plugin package to npm
+
+```bash
+cd extensions/memory-munch-tools
+npm login
+npm publish --access public
+```
+
+Package name in this repo: `@dottedt/memory-munch-tools`
+
+### Verify npm install path works
+
+```bash
+openclaw plugins install @dottedt/memory-munch-tools
+openclaw daemon restart
+openclaw plugins info memory-munch-tools --json
+```
+
+### Submit to OpenClaw community list
+
+Requirements are documented here:
+`https://docs.openclaw.ai/plugins/community#required-for-listing`
+
+Include:
+- npm package link
+- GitHub source link
+- setup/docs link (this README)
+- issue tracker link
