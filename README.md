@@ -40,52 +40,47 @@ Free for personal and non-commercial use.
 
 If a company wants to incorporate Memory-Munch into internal systems, products, or services, a paid commercial license is required from the project owner. See [`LICENSE`](LICENSE).
 
-## Installation (from zero)
+## Installation (OpenClaw style)
 
 ### 1) Prerequisites
 Python 3.11+
-OpenClaw installed (openclaw command works)
+OpenClaw installed (`openclaw` command works)
 Git
 
-Check prerequisites:
+### 2) Install Memory-Munch Python backend
 
 ```bash
-python3 --version
-openclaw --version
-git --version
+pip install "git+https://github.com/dottedt/memory-munch.git"
 ```
 
-### 2) Download Memory-Munch and enter the directory
+### 3) Install plugin from npm via OpenClaw
+
+```bash
+openclaw plugins install @dottedt/memory-munch-tools
+openclaw config set --strict-json plugins.allow '["memory-munch-tools"]'
+openclaw config set plugins.slots.memory memory-munch-tools
+openclaw daemon restart
+```
+
+### 4) Optional (developer/source install path)
 
 ```bash
 git clone https://github.com/dottedt/memory-munch.git
 cd memory-munch
-```
-
-### 3) Install the Python package
-
-```bash
 pip install -e .
-# or, if you use uv:
-uv pip install -e .
-```
-
-### 4) Install the OpenClaw plugin
-
-```bash
 bash ./scripts/install_openclaw_memory_munch_plugin.sh
 ```
 
-Install safety:
-- Non-destructive for the rest of OpenClaw config.
-- Only Memory-Munch-managed keys are changed (`plugins.entries.memory-munch-tools.*`, `plugins.slots.memory`, and optionally `plugins.allow`).
-- A backup snapshot is created before changes.
-
-The installer prints:
-- backup snapshot location
-- plugin file diff report (`plugin_dir.diff`)
-
 ## Uninstall / Rollback
+
+OpenClaw-style uninstall:
+
+```bash
+openclaw plugins uninstall memory-munch-tools
+openclaw daemon restart
+```
+
+If you installed via the source installer script, use rollback:
 
 ```bash
 bash ./scripts/undo_openclaw_memory_munch_install.sh

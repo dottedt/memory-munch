@@ -1,11 +1,11 @@
 {
   "name": "@dottedt/memory-munch-tools",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Memory-Munch plugin for OpenClaw deterministic memory retrieval",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dottedt/memory-munch.git",
+    "url": "git+https://github.com/dottedt/memory-munch.git",
     "directory": "extensions/memory-munch-tools"
   },
   "homepage": "https://github.com/dottedt/memory-munch",
@@ -22,10 +22,17 @@
   "files": [
     "index.ts",
     "openclaw.plugin.json",
+    "openclaw_memory_munch_bridge.py",
+    "LICENSE",
     "sdk"
   ],
   "main": "index.ts",
   "publishConfig": {
     "access": "public"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

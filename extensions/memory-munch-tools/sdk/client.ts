@@ -27,10 +27,12 @@ export function resolvePluginCfg(api: OpenClawPluginApi): ResolvedPluginCfg {
   const cfg = (api.pluginConfig ?? {}) as PluginCfg;
   const home = process.env.HOME || "";
   const defaultWorkspace = home ? `${home}/.openclaw/workspace` : ".";
+  const defaultBridge = home
+    ? `${home}/.openclaw/extensions/memory-munch-tools/openclaw_memory_munch_bridge.py`
+    : "openclaw_memory_munch_bridge.py";
   return {
     pythonBin: cfg.pythonBin?.trim() || process.env.MEMORY_MUNCH_PYTHON || "python3",
-    bridgeScript:
-      cfg.bridgeScript?.trim() || process.env.MEMORY_MUNCH_BRIDGE || "openclaw_memory_munch_bridge.py",
+    bridgeScript: cfg.bridgeScript?.trim() || process.env.MEMORY_MUNCH_BRIDGE || defaultBridge,
     configPath:
       cfg.configPath?.trim() || process.env.MEMORY_MUNCH_CONFIG || `${defaultWorkspace}/dmemorymunch-mpc.toml`,
     timeoutMs:
